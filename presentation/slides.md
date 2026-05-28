@@ -41,6 +41,8 @@ style: |
   }
   pre code { background: transparent; color: #e0eaf5; font-size: 0.82em; padding: 0; border: none; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 2em; }
+  section.demo { padding: 0; background: #0a0a0a; justify-content: center; align-items: center; }
+  section.demo img { width: 100%; height: 100%; object-fit: contain; display: block; }
   ul { line-height: 1.9; }
   li { margin: 0; }
 ---
@@ -260,6 +262,12 @@ Hooks detect a venv automatically — no path config needed.
 Merge conflict → human-readable resolution
 
 `feature/add-properties-layer` + `feature/update-symbology` → `main`
+
+---
+
+<!-- _class: demo -->
+
+![Demo](demo.gif)
 
 ---
 
