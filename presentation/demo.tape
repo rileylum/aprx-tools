@@ -51,43 +51,38 @@ Type "bat --paging=never map.aprx.src/GISProject.json"
 Enter
 Sleep 10s
 
-# ── Open in nano and resolve ──────────────────────────────────────────────────
+# ── Open in nvim and resolve ──────────────────────────────────────────────────
 
-Type "nano map.aprx.src/GISProject.json"
+Type "nvim map.aprx.src/GISProject.json"
 Enter
 Sleep 2s
 
-# Conflict is at line 4. Cursor starts at line 1 — navigate down 3 lines.
-Down
-Down
-Down
+# Jump straight to the conflict at line 4
+Type "4G"
 Sleep 1s
 
 # Delete: <<<<<<< HEAD
-Ctrl+K
+Type "dd"
 Sleep 500ms
 
 # Delete: "title": "Acme Site Analysis — New Layers"  (the version we don't want)
-Ctrl+K
+Type "dd"
 Sleep 500ms
 
 # Delete: =======
-Ctrl+K
+Type "dd"
 Sleep 500ms
 
 # "title": "Acme Site Analysis — Q2 2026" is now current line — keep it, skip over
-Down
+Type "j"
 Sleep 500ms
 
 # Delete: >>>>>>> feature/update-symbology
-Ctrl+K
+Type "dd"
 Sleep 3s
 
-# Save and exit
-Ctrl+X
-Sleep 1s
-Type "y"
-Sleep 500ms
+# Save and quit
+Type ":wq"
 Enter
 Sleep 1s
 
