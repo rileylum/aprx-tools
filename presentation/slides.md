@@ -18,14 +18,16 @@ style: |
     justify-content: center;
   }
   section.lead h1 { color: #ffffff; font-size: 2.4em; }
-  section.lead h3 { color: #a8d8ea; font-weight: 400; }
-  section.lead p  { color: #a8d8ea; font-size: 0.9em; margin-top: 2em; }
+  section.lead h3 { color: #c8e6f0; font-weight: 400; }
+  section.lead p  { color: #c8e6f0; font-size: 0.9em; margin-top: 2em; }
+  section.lead code { background: rgba(255,255,255,0.18); color: #ffffff; border: 1px solid rgba(255,255,255,0.3); }
   h1 { color: #0f3460; font-size: 1.8em; border-bottom: 3px solid #e94560; padding-bottom: 8px; }
   h2 { color: #0f3460; }
-  strong { color: #e94560; }
-  code { background: #f0f4f8; border-radius: 3px; padding: 1px 5px; font-size: 0.9em; }
+  strong { color: #c0183a; }
+  strong code { color: #c0183a; }
+  code { background: #dde4f0; border-radius: 3px; padding: 1px 5px; font-size: 0.9em; color: #1a1a2e; }
   pre { background: #1a1a2e; border-radius: 8px; padding: 24px; }
-  pre code { background: transparent; color: #a8d8ea; font-size: 0.82em; padding: 0; }
+  pre code { background: transparent; color: #e0eaf5; font-size: 0.82em; padding: 0; border: none; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 2em; }
   ul { line-height: 1.9; }
   li { margin: 0; }
