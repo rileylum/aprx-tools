@@ -9,8 +9,8 @@ Output demo.gif
 
 Set Theme "Dracula"
 Set FontSize 16
-Set Width 100
-Set Height 32
+Set Width 1200
+Set Height 650
 Set PlaybackSpeed 0.85
 Set CursorBlink false
 Set TypingSpeed 40ms
