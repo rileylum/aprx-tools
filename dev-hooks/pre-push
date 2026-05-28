@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+uv run pytest || {
+    echo "Tests failed — push aborted" >&2
+    exit 1
+}

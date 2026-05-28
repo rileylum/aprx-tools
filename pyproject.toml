@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=61", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "aprx-tools"
@@ -12,5 +12,11 @@ license = { text = "MIT" }
 [project.scripts]
 aprx = "aprx_tools.__main__:main"
 
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
 [tool.setuptools.packages.find]
 include = ["aprx_tools*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
