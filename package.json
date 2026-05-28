@@ -1,0 +1,16 @@
+{
+  "name": "aprx-tools",
+  "version": "0.1.0",
+  "description": "Version-control tooling for ArcGIS .aprx project files",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node npm/postinstall.js"
+  },
+  "files": [
+    "npm/"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "keywords": ["arcgis", "aprx", "gis", "git", "version-control"]
+}
