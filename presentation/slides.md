@@ -49,11 +49,11 @@ style: |
 
 <!-- _class: lead -->
 
-# Version Controlling<br>ArcGIS Projects
+# Git APRX
 
 ### Transparent, automatic, mergeable `.aprx` management
 
-Acme Geospatial · May 2026
+Riley · May 2026
 
 ---
 
