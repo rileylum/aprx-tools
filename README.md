@@ -39,8 +39,9 @@ Or install via **npm** (also installs the git hooks automatically):
 npm install aprx-tools
 ```
 
-No specific Python tooling is required in your project — the installed hooks
-use whatever Python is available in your environment.
+Requires Python 3.9+. No specific package manager is required in your project
+— the installed hooks use whatever Python interpreter is available in your
+environment.
 
 ## Usage
 
