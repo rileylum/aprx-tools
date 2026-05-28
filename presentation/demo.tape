@@ -45,15 +45,9 @@ Type "git status"
 Enter
 Sleep 10s
 
-# ── Show the conflict is readable JSON ────────────────────────────────────────
+# ── Show the conflict — bat syntax-highlights the markers ─────────────────────
 
-Type "cat map.aprx.src/GISProject.json"
-Enter
-Sleep 10s
-
-# ── Highlight just the conflict markers ───────────────────────────────────────
-
-Type "grep --color=always -n -E '<<<<<<|======|>>>>>>' map.aprx.src/GISProject.json"
+Type "bat --paging=never map.aprx.src/GISProject.json"
 Enter
 Sleep 10s
 
@@ -99,7 +93,7 @@ Sleep 1s
 
 # ── Show the resolved file ────────────────────────────────────────────────────
 
-Type "cat map.aprx.src/GISProject.json"
+Type "bat --paging=never map.aprx.src/GISProject.json"
 Enter
 Sleep 10s
 
