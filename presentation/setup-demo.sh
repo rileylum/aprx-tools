@@ -200,37 +200,6 @@ git commit -qm "Add boundaries layer and update Q2 title"
 
 git checkout -q main
 
-# ── resolve.py — used during the demo to accept both branches' changes ─────────
-
-cat > resolve.py << 'EOF'
-#!/usr/bin/env python3
-"""
-Merges both branches' intentions:
-  - Q2 title (from feature/update-symbology)
-  - boundaries layer (from feature/update-symbology)
-  - properties layer (from feature/add-properties-layer)
-"""
-import json
-from pathlib import Path
-
-resolved = {
-    "type": "CIMMapDocument",
-    "version": "3.0.0",
-    "title": "Acme Site Analysis — Q2 2026",
-    "defaultCamera": {"scale": 50000},
-    "layers": [
-        "CIMPATH=map/boundaries.json",
-        "CIMPATH=map/roads.json",
-        "CIMPATH=map/parcels.json",
-        "CIMPATH=map/properties.json",
-    ],
-}
-
-p = Path("map.aprx.src/GISProject.json")
-p.write_text(json.dumps(resolved, indent=2))
-print("Resolved: Q2 title + boundaries + properties layers combined")
-EOF
-
 # ── also need boundaries.json available on main for the commit to work ─────────
 # (the merge will bring it in, but properties.json won't exist on main yet —
 #  we copy it here so the resolve step can add both layer files cleanly)
