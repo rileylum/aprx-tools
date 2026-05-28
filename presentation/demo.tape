@@ -92,7 +92,7 @@ Sleep 3s
 # Save and exit
 Ctrl+X
 Sleep 1s
-y
+Type "y"
 Sleep 500ms
 Enter
 Sleep 1s
