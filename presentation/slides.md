@@ -26,7 +26,19 @@ style: |
   strong { color: #c0183a; }
   strong code { color: #c0183a; }
   code { background: #dde4f0; border-radius: 3px; padding: 1px 5px; font-size: 0.9em; color: #1a1a2e; }
-  pre { background: #1a1a2e; border-radius: 8px; padding: 24px; }
+  pre, marp-pre {
+    background: #1a1a2e;
+    border-radius: 8px;
+    padding: 24px;
+    --color-prettylights-syntax-constant: #79c0ff;
+    --color-prettylights-syntax-string: #a5d6ff;
+    --color-prettylights-syntax-storage-modifier-import: #f0f6fc;
+    --color-prettylights-syntax-comment: #9198a1;
+    --color-prettylights-syntax-entity: #d2a8ff;
+    --color-prettylights-syntax-entity-tag: #7ee787;
+    --color-prettylights-syntax-keyword: #ff7b72;
+    --color-prettylights-syntax-variable: #ffa657;
+  }
   pre code { background: transparent; color: #e0eaf5; font-size: 0.82em; padding: 0; border: none; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 2em; }
   ul { line-height: 1.9; }
