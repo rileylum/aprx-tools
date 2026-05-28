@@ -182,18 +182,14 @@ section.demo img { width: 100%; height: 100%; object-fit: contain; display: bloc
 ul { line-height: 1.9; }
 li { margin: 0; }
 ;" data-marpit-pagination-total="12">
-<h1 id="the-problem">The Problem</h1>
-<p>Two GIS developers. One project. Separate feature branches.</p>
+<h1 id="aprx-files-are-binary"><code>.aprx</code> files are binary</h1>
+<p>Git can see <strong>that</strong> a project changed.<br />
+Git cannot see <strong>what</strong> changed inside it.</p>
 <br />
-<pre is="marp-pre" data-auto-scaling="downscale-only"><code>$ git merge feature/add-layer
-
-warning: Cannot merge binary files: project.aprx
-CONFLICT (binary): Merge conflict in project.aprx
-Automatic merge failed; fix conflicts and then commit the result.
-</code></pre>
+<p>When two people edit the same map and merge their branches,<br />
+git has no way to combine the changes.</p>
 <br />
-<p>No diff. No context. <strong>No way to see what changed.</strong></p>
-<p><strong>Last commit wins.</strong></p>
+<p><strong>Last commit wins — someone's work gets overwritten.</strong></p>
 </section>
 </foreignObject></svg><svg data-marpit-svg="" viewBox="0 0 1280 720"><foreignObject width="1280" height="720"><section id="3" data-paginate="true" data-theme="default" data-style=":root {
   --color-background: #ffffff;

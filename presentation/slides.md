@@ -57,25 +57,19 @@ Riley · May 2026
 
 ---
 
-# The Problem
+# `.aprx` files are binary
 
-Two GIS developers. One project. Separate feature branches.
-
-<br>
-
-```
-$ git merge feature/add-layer
-
-warning: Cannot merge binary files: project.aprx
-CONFLICT (binary): Merge conflict in project.aprx
-Automatic merge failed; fix conflicts and then commit the result.
-```
+Git can see **that** a project changed.
+Git cannot see **what** changed inside it.
 
 <br>
 
-No diff. No context. **No way to see what changed.**
+When two people edit the same map and merge their branches,
+git has no way to combine the changes.
 
-**Last commit wins.**
+<br>
+
+**Last commit wins — someone's work gets overwritten.**
 
 ---
 
