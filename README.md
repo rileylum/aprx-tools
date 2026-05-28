@@ -100,6 +100,36 @@ A wrapper around `git diff` that formats output for GIS users rather than showin
 **CI diff reporting**
 A GitHub Actions step (or generic CI script) that posts a structured diff as a PR comment: which layers were added, which connection strings changed, which definition queries were modified. Makes map project changes reviewable in the same workflow as code changes, without requiring reviewers to open ArcGIS Pro.
 
+### CI/CD and automation
+
+**`gitattributes` textconv**
+A `.gitattributes` entry that tells GitHub to run `aprx explode` as a textconv driver when rendering diffs. GitHub's PR UI shows the JSON diff inline instead of "binary file changed". No CI required — just config. The lowest-effort improvement available to any team adopting the tool today.
+
+**Sync validation**
+A CI job that verifies the committed `.aprx` binary matches what you'd get by packing the committed `.aprx.src/` — i.e. `aprx compare map.aprx map.aprx.src/` passes. Catches commits made without hooks installed. Pair with a branch protection rule requiring the check to pass and hook installation becomes effectively mandatory: people can bypass locally but cannot merge a drifted binary.
+
+**Connection string enforcement**
+A CI check that reads connection strings from `.aprx.src/` and asserts they match the expected pattern for the target branch — dev branch must not reference prod servers, prod branch must not reference localhost. Catches the wrong-environment deployment error before it reaches the environment.
+
+**Automated connection string substitution on push**
+A GitHub Actions workflow triggered on push to environment branches (`uat`, `trn`, `prd`) that applies the branch `connections.json` and repacks the `.aprx`. Automates the promotion step so no developer has to remember to run the substitution manually on each deploy.
+
+**Deployment artifact / Portal publish**
+After substitution, pack an environment-specific `.aprx` and upload it as a build artifact or publish directly to ArcGIS Enterprise / Portal via the REST API. Closes the last manual step in the promotion pipeline.
+
+The full pipeline once these pieces exist:
+
+```
+developer commits  →  pre-commit hook        →  explodes, packs, stages
+PR opened          →  CI sync check          →  binary matches src?
+                   →  CI diff comment        →  what changed in this PR?
+                   →  CI connection check    →  no prod strings on dev branch?
+PR merged to uat   →  CI substitution + pack →  uat connection strings applied
+                   →  artifact / deploy      →  published to UAT portal
+```
+
+Local hooks and CI checks are defence-in-depth for the same invariants — someone without hooks installed gets caught by CI before they can merge.
+
 ## Testing
 
 The test suite covers the core explode/pack/compare/install workflows against a single Pro 3.x fixture. The following areas need additional coverage before the tool can be considered production-ready.
