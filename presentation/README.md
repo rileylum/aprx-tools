@@ -28,10 +28,11 @@ Requires [VHS](https://github.com/charmbracelet/vhs) and `ffmpeg`:
 ```bash
 # Arch
 sudo pacman -S ffmpeg
+yay -S ttyd
 go install github.com/charmbracelet/vhs@latest
 
 # macOS
-brew install vhs
+brew install vhs  # includes ttyd
 ```
 
 Set up the demo repo, then record:
