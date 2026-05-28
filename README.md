@@ -100,6 +100,39 @@ A wrapper around `git diff` that formats output for GIS users rather than showin
 **CI diff reporting**
 A GitHub Actions step (or generic CI script) that posts a structured diff as a PR comment: which layers were added, which connection strings changed, which definition queries were modified. Makes map project changes reviewable in the same workflow as code changes, without requiring reviewers to open ArcGIS Pro.
 
+## Testing
+
+The test suite covers the core explode/pack/compare/install workflows against a single Pro 3.x fixture. The following areas need additional coverage before the tool can be considered production-ready.
+
+### Version fixtures
+
+The current fixture is Pro 3.x (JSON internals). Pro 2.x stored internals as XML — a breaking schema change at the 3.0 boundary. A round-trip test against a real Pro 2.x project (targeting ~2.9, the last XML-based release) and a Pro 3.0 project (first JSON-based release) would verify the tool handles both formats correctly or fails gracefully at the boundary. Acquiring these fixtures requires access to older Pro installs.
+
+### Binary pass-through
+
+`.aprx` files can contain non-JSON/XML entries — thumbnail images (`.dat` files in a `Thumbnails/` folder) and other binary blobs. These must be copied verbatim without any formatting or parsing attempt. There are currently no tests verifying this; a malformed binary-as-text path would silently corrupt the packed output.
+
+### Determinism
+
+The round-trip test confirms semantic identity (`compare` returns no diff). The stronger guarantee — that two independent pack runs from the same source produce byte-for-byte identical output — is not explicitly tested. A test packing the same directory twice and asserting `bytes_a == bytes_b` would catch non-determinism from dictionary ordering, file enumeration order, or timestamp handling.
+
+### Cross-platform
+
+The test suite runs on Linux only. The two most likely Windows/macOS failure points are CIMPATH URI construction (forward slashes must be preserved regardless of OS path separator) and XML line ending normalisation (which could break determinism across platforms). The existing tests are written to catch both — running them in a CI matrix across Linux, Windows, and macOS is the main gap, not new test logic.
+
+### Structural variations
+
+The current fixture has feature layers, a table, a basemap, and a layout. Missing coverage:
+
+- **Multiple maps** — a project containing two or more maps, exercising CIMPATH reference resolution across the layer tree
+- **Deeply nested group layers** — verifies child layer ordering is preserved through round-trip
+- **Empty/minimal project** — no layers, no layout; confirms the tool does not crash on degenerate input
+- **Non-ASCII content** — Unicode in layer names or connection strings
+
+### Hook behaviour under failure
+
+The install tests cover hook wiring. Not covered: what happens when pack is invoked on malformed JSON (e.g. a file mid-merge-conflict with conflict markers). The hook should fail the commit with a readable error rather than a Python traceback or — worse — silently succeed with a broken binary.
+
 ## Contributing
 
 This project uses [uv](https://github.com/astral-sh/uv) for development.
