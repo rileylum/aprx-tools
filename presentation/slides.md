@@ -265,20 +265,13 @@ Merge conflict → human-readable resolution
 
 ---
 
-# What's Next
+# Questions?
+
+Potential extensions if there's interest:
 
 - **Connection string substitution** — `connections.json` per branch, substituted at pack time (`.env` for ArcGIS)
 - **CI diff reporting** — PR comment showing what changed in each layer
-- **ArcGIS Pro extension** — explode/pack from within the application
 
 <br>
 
-Open source:
-
-```
-github.com/rileylum/git-aprx
-```
-
-```bash
-npm install aprx-tools
-```
+Reach out to Riley for more.
