@@ -66,6 +66,77 @@ After `aprx install`, the workflow is automatic:
 - **`git pull` / branch switch** — git updates `map.aprx` directly since it
   is a tracked file.
 
+## Environment-specific connection strings
+
+`.aprx` files embed database connection strings directly in their JSON. Teams that
+promote work across environment branches (dev → uat → prd) need each environment to
+point at its own database — but those connection strings would otherwise travel with
+every merge and break deploys, forcing a manual "fix the connections" commit after
+each promotion.
+
+aprx-tools solves this by keeping the committed source **environment-neutral**:
+connection strings are stored as `@@tokens@@`, and the real values live in
+per-environment files. `pack` substitutes tokens → values for a chosen environment;
+`explode` reverse-tokenises values → tokens.
+
+### Setup
+
+```sh
+aprx connections init map.aprx
+```
+
+This scans the project, generates a key for each distinct connection string, and
+writes `aprx.json` (which fields to substitute), `connections/dev.json` (the real
+values it found), and `local.json.example` (a template). Then:
+
+```sh
+echo "local.json" >> .gitignore   # per-developer, never committed
+echo "*.aprx"      >> .gitignore   # derived artifact, built on demand
+
+cp local.json.example local.json   # fill in your local paths
+# add connections/uat.json, connections/prd.json with the same keys
+aprx explode map.aprx              # connection strings become @@tokens@@
+```
+
+### How it fits together
+
+| File | Committed? | Holds |
+|------|-----------|-------|
+| `map.aprx.src/` | yes | environment-neutral source (tokens) — the source of truth |
+| `connections/<env>.json` | yes | real connection strings, one file per environment |
+| `local.json` | no (gitignored) | each developer's working connections |
+| `map.aprx` | no (gitignored) | working / deploy binary, built on demand |
+
+- **Developers** open a working `map.aprx` built from the source + their `local.json`.
+  The `post-merge` / `post-checkout` hooks rebuild it automatically after pulls and
+  branch switches; `aprx build` does it manually.
+- **On commit**, the pre-commit hook re-explodes the working `.aprx`, re-tokenising
+  it, and stages only the neutral source — the binary is never committed.
+- **CI** builds the environment-specific artifact with `aprx pack map.aprx.src --env uat`
+  and never reads the committed binary:
+
+  ```yaml
+  # .github/workflows/deploy.yml (sketch)
+  - run: pip install aprx-tools
+  - run: aprx connections check                    # every env defines the same keys
+  - run: aprx pack map.aprx.src --env uat -o map.aprx
+  # → publish map.aprx to the UAT portal
+  ```
+
+Because connection strings never live in the merged content, a PR merge can't carry
+the wrong ones. A connection string with no registered key fails the explode; a
+missing key fails the pack — so a wrong-environment build fails loudly instead of
+publishing against the wrong database.
+
+### Configurable fields
+
+By default only `workspaceConnectionString` is substituted. To cover other
+environment-specific fields (e.g. service URLs), list them in `aprx.json`:
+
+```json
+{ "fields": ["workspaceConnectionString", "serviceUrl"] }
+```
+
 ## Roadmap
 
 ### Format support
@@ -77,9 +148,6 @@ After `aprx install`, the workflow is automatic:
 ArcGIS toolboxes use the same ZIP-of-JSON structure as `.aprx`. The explode/pack logic already handles this; wiring up the hooks and CLI for `.atbx` is a low-effort extension that gives developer-focused GIS teams version control over their toolbox logic alongside their project files.
 
 ### Deployment
-
-**Connection string substitution**
-`.aprx` files embed connection strings directly in the JSON — `SERVER=dev-gis;DATABASE=acme_dev` and so on. A `connections.json` file per branch (`.env`-style) would be applied at pack time to substitute all data sources, making branch-per-environment workflows safe without manual `updateConnectionProperties()` scripting on every deploy.
 
 **Broken data source detection**
 The pre-commit hook already reads the staged JSON. It can scan connection strings for known-bad patterns (localhost references, dev server names, missing paths) and fail the commit with a clear message before a broken project reaches the remote. Zero additional dependencies.
@@ -112,7 +180,12 @@ A CI job that verifies the committed `.aprx` binary matches what you'd get by pa
 A CI check that reads connection strings from `.aprx.src/` and asserts they match the expected pattern for the target branch — dev branch must not reference prod servers, prod branch must not reference localhost. Catches the wrong-environment deployment error before it reaches the environment.
 
 **Automated connection string substitution on push**
-A GitHub Actions workflow triggered on push to environment branches (`uat`, `trn`, `prd`) that applies the branch `connections.json` and repacks the `.aprx`. Automates the promotion step so no developer has to remember to run the substitution manually on each deploy.
+The substitution itself now ships (see [Environment-specific connection
+strings](#environment-specific-connection-strings)); `aprx pack --env <name>` applies
+a branch's connection file at pack time. What remains is the packaging glue: a
+GitHub Actions workflow on push to environment branches (`uat`, `trn`, `prd`) that
+runs the build and publishes the artifact, so no developer has to remember to do it
+manually on each deploy.
 
 **Deployment artifact / Portal publish**
 After substitution, pack an environment-specific `.aprx` and upload it as a build artifact or publish directly to ArcGIS Enterprise / Portal via the REST API. Closes the last manual step in the promotion pipeline.

@@ -23,18 +23,38 @@ def main() -> None:
     p.add_argument("src_dir", metavar="dir")
     p.add_argument("output_file", metavar="output.aprx", nargs="?",
                    help="Destination file (default: derived from directory name)")
+    p.add_argument("--env", metavar="NAME",
+                   help="Build for environment NAME (uses connections/NAME.json).")
+    p.add_argument("--connections", metavar="FILE", dest="connections_file",
+                   help="Explicit connections file (overrides --env and the "
+                        "local.json default).")
+
+    # build
+    p = sub.add_parser("build", help="(Re)build the working .aprx from its src dir(s).")
+    p.add_argument("src_dir", metavar="dir", nargs="?",
+                   help="Specific .aprx.src directory (default: every one in the repo).")
+    p.add_argument("--env", metavar="NAME",
+                   help="Environment to build for (default: local.json).")
 
     # compare
     p = sub.add_parser("compare", help="Semantically diff two .aprx files or directories.")
     p.add_argument("a", metavar="a")
     p.add_argument("b", metavar="b")
 
+    # connections
+    p = sub.add_parser("connections", help="Manage per-environment connection files.")
+    csub = p.add_subparsers(dest="connections_command", metavar="<subcommand>")
+    pi = csub.add_parser("init", help="Scaffold connection files from an existing .aprx.")
+    pi.add_argument("aprx_file", metavar="file.aprx")
+    csub.add_parser("check", help="Verify every environment defines the same keys.")
+
     # install
     sub.add_parser("install", help="Install git hooks into the current repository.")
 
     # hook (internal — called by the installed hook scripts)
     p = sub.add_parser("hook", help=argparse.SUPPRESS)
-    p.add_argument("hook_name", choices=["pre-commit", "post-stash"])
+    p.add_argument("hook_name",
+                   choices=["pre-commit", "post-stash", "post-merge", "post-checkout"])
 
     args = parser.parse_args()
 
@@ -44,7 +64,12 @@ def main() -> None:
 
     elif args.command == "pack":
         from .pack import pack
-        pack(args.src_dir, args.output_file)
+        pack(args.src_dir, args.output_file,
+             env=args.env, connections_file=args.connections_file)
+
+    elif args.command == "build":
+        from .hooks import build_working_copies
+        build_working_copies(src_dir=args.src_dir, env=args.env)
 
     elif args.command == "compare":
         from .compare import compare
@@ -53,16 +78,28 @@ def main() -> None:
             print("Identical: all files match semantically.")
         sys.exit(1 if has_diff else 0)
 
+    elif args.command == "connections":
+        from .bootstrap import connections_init, connections_check
+        if args.connections_command == "init":
+            connections_init(args.aprx_file)
+        elif args.connections_command == "check":
+            connections_check()
+        else:
+            p.print_help()
+            sys.exit(1)
+
     elif args.command == "install":
         from .install import install_hooks
         install_hooks()
 
     elif args.command == "hook":
-        from .hooks import hook_pre_commit, hook_post_stash
-        if args.hook_name == "pre-commit":
-            hook_pre_commit()
-        else:
-            hook_post_stash()
+        from . import hooks
+        {
+            "pre-commit": hooks.hook_pre_commit,
+            "post-stash": hooks.hook_post_stash,
+            "post-merge": hooks.hook_post_merge,
+            "post-checkout": hooks.hook_post_checkout,
+        }[args.hook_name]()
 
     else:
         parser.print_help()
