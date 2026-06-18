@@ -62,12 +62,24 @@ def test_configurable_fields():
     assert tokenized["serviceUrl"] == "@@svc@@"
 
 
-def test_backslash_value_reserialises_validly(tmp_path):
-    # A Windows path with backslashes must survive substitution as valid JSON.
-    doc = _doc("@@main@@")
-    restored, _ = conn.substitute(doc, {"main": "DATABASE=C:\\data\\acme.gdb"})
-    reparsed = json.loads(json.dumps(restored))
-    assert _conn_str(reparsed) == "DATABASE=C:\\data\\acme.gdb"
+@pytest.mark.parametrize("value", [
+    "DATABASE=C:\\data\\acme.gdb",                       # Windows path (backslashes)
+    "\\\\fileserver\\gis\\parcels.gdb",                 # UNC path
+    "SERVER=db;INSTANCE=sde:sqlserver:db;DATABASE=acme",  # enterprise (; and =)
+    'PASSWORD="a;b\\c";USER=v',                          # embedded quote/backslash/semicolon
+    "DATABASE=.\\café_районexplore.gdb",                # non-ASCII
+])
+def test_special_chars_survive_substitution_roundtrip(value):
+    # Operating on parsed JSON (not text) means any value re-serialises validly and
+    # comes back byte-identical through a real json dump/load cycle.
+    restored, missing = conn.substitute(_doc("@@main@@"), {"main": value})
+    assert missing == set()
+    reparsed = json.loads(json.dumps(restored, ensure_ascii=False))
+    assert _conn_str(reparsed) == value
+    # and the reverse direction recognises it
+    tokenized, unknown = conn.tokenize(_doc(value), {value: "main"})
+    assert _conn_str(tokenized) == "@@main@@"
+    assert unknown == set()
 
 
 # --------------------------------------------------------------------------- #
@@ -175,3 +187,34 @@ def test_simple_mode_untouched(tmp_path, simple_aprx):
     pts = (src / "map" / "test_points.json").read_text()
     assert "@@" not in pts
     assert ".gdb" in pts
+
+
+def test_configurable_field_substitutes_service_urls(tmp_path, simple_aprx):
+    # The basemap stores its endpoint under `url`, not workspaceConnectionString.
+    # Declaring `fields: ["url"]` in aprx.json makes those substitutable too —
+    # the "URLs live under a different field" case, on the existing fixture.
+    import shutil
+    proj = tmp_path / "u"
+    (proj / "connections").mkdir(parents=True)
+    aprx = proj / "map.aprx"
+    shutil.copy(simple_aprx, aprx)
+
+    urls = set()
+    with zipfile.ZipFile(aprx) as zf:
+        for name in zf.namelist():
+            if name.endswith(".json"):
+                urls |= conn.collect_field_values(json.loads(zf.read(name)), fields=("url",))
+    assert urls, "fixture should contain service URLs"
+
+    mapping = {f"svc{i}": v for i, v in enumerate(sorted(urls))}
+    (proj / "aprx.json").write_text(json.dumps({"fields": ["url"]}))
+    (proj / "connections" / "dev.json").write_text(json.dumps(mapping))
+    (proj / "local.json").write_text(json.dumps(mapping))
+
+    src = explode(str(aprx))
+    topo = (src / "map" / "topographic.json").read_text()
+    for value in urls:
+        assert value not in topo
+    assert "@@svc0@@" in topo
+    # workspaceConnectionString is NOT in `fields` here, so it stays raw.
+    assert ".gdb" in (src / "map" / "test_points.json").read_text()
