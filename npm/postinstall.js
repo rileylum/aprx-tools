@@ -14,12 +14,8 @@ const { execSync } = require("child_process");
 
 const MARKER = "managed-by: aprx-tools";
 
-const HOOKS = {
-  "pre-commit": `#!/usr/bin/env bash
-# ${MARKER}
-set -euo pipefail
-
-REPO_ROOT=$(git rev-parse --show-toplevel)
+// Probe for a repo-local virtualenv Python, falling back to python3.
+const PYTHON_PROBE = `REPO_ROOT=$(git rev-parse --show-toplevel)
 
 PYTHON=python3
 for candidate in \\
@@ -28,31 +24,34 @@ for candidate in \\
     "$REPO_ROOT/env/bin/python3";  \\
 do
     if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
-done
+done`;
 
-"$PYTHON" -m aprx_tools hook pre-commit || {
+// Blocking hooks (pre-commit) fail the git operation on error; non-blocking
+// hooks (post-*) never block it.
+function hookScript(name, blocking) {
+  const invoke = `"$PYTHON" -m aprx_tools hook ${name}`;
+  const tail = blocking
+    ? `${invoke} || {
     echo "aprx-tools: hook failed — is aprx-tools installed? (pip install aprx-tools)" >&2
     exit 1
 }
-`,
-
-  "post-stash": `#!/usr/bin/env bash
+`
+    : `${invoke} || true
+`;
+  return `#!/usr/bin/env bash
 # ${MARKER}
 set -euo pipefail
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+${PYTHON_PROBE}
 
-PYTHON=python3
-for candidate in \\
-    "$REPO_ROOT/.venv/bin/python3" \\
-    "$REPO_ROOT/venv/bin/python3"  \\
-    "$REPO_ROOT/env/bin/python3";  \\
-do
-    if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
-done
+${tail}`;
+}
 
-"$PYTHON" -m aprx_tools hook post-stash || true
-`,
+const HOOKS = {
+  "pre-commit": hookScript("pre-commit", true),
+  "post-stash": hookScript("post-stash", false),
+  "post-merge": hookScript("post-merge", false),
+  "post-checkout": hookScript("post-checkout", false),
 };
 
 function findGitRoot(start) {

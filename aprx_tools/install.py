@@ -7,34 +7,8 @@ from pathlib import Path
 
 MARKER = "managed-by: aprx-tools"
 
-_PRE_COMMIT = """\
-#!/usr/bin/env bash
-# {marker}
-set -euo pipefail
-
-REPO_ROOT=$(git rev-parse --show-toplevel)
-
-# Prefer a virtual-environment Python if one exists in the repo root.
-PYTHON=python3
-for candidate in \\
-    "$REPO_ROOT/.venv/bin/python3" \\
-    "$REPO_ROOT/venv/bin/python3"  \\
-    "$REPO_ROOT/env/bin/python3";  \\
-do
-    if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
-done
-
-"$PYTHON" -m aprx_tools hook pre-commit || {{
-    echo "aprx-tools: hook failed — is aprx-tools installed? (pip install aprx-tools)" >&2
-    exit 1
-}}
-""".format(marker=MARKER)
-
-_POST_STASH = """\
-#!/usr/bin/env bash
-# {marker}
-set -euo pipefail
-
+# Probe for a repo-local virtualenv Python, falling back to python3.
+_PYTHON_PROBE = """\
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
 PYTHON=python3
@@ -45,14 +19,31 @@ for candidate in \\
 do
     if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
 done
+"""
 
-# post-stash failure should not block the stash operation
-"$PYTHON" -m aprx_tools hook post-stash || true
-""".format(marker=MARKER)
+
+def _hook_script(hook_name: str, blocking: bool) -> str:
+    """Build a hook script. Blocking hooks (pre-commit) fail the git operation on
+    error; non-blocking hooks (post-*) never block it."""
+    invoke = f'"$PYTHON" -m aprx_tools hook {hook_name}'
+    if blocking:
+        tail = (
+            f"{invoke} || {{\n"
+            f'    echo "aprx-tools: hook failed — is aprx-tools installed? '
+            f'(pip install aprx-tools)" >&2\n'
+            f"    exit 1\n"
+            f"}}\n"
+        )
+    else:
+        tail = f"{invoke} || true\n"
+    return f"#!/usr/bin/env bash\n# {MARKER}\nset -euo pipefail\n\n{_PYTHON_PROBE}\n{tail}"
+
 
 HOOKS = {
-    "pre-commit": _PRE_COMMIT,
-    "post-stash": _POST_STASH,
+    "pre-commit": _hook_script("pre-commit", blocking=True),
+    "post-stash": _hook_script("post-stash", blocking=False),
+    "post-merge": _hook_script("post-merge", blocking=False),
+    "post-checkout": _hook_script("post-checkout", blocking=False),
 }
 
 
@@ -85,7 +76,7 @@ def install_hooks(repo_root: Path = None) -> None:
                 print(
                     f"  aprx-tools: {name} hook already exists and is not ours.\n"
                     f"  Add this line to {hook_path}:\n"
-                    f'    python3 -m aprx_tools hook {name.replace("-", "_").split("_", 1)[-1]}'
+                    f"    python3 -m aprx_tools hook {name}"
                 )
                 continue
 

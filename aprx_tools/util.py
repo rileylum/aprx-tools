@@ -19,3 +19,11 @@ def is_aprx_src_dir(path: Path) -> bool:
         and path.name.endswith(".aprx.src")
         and (path / "GISProject.json").exists()
     )
+
+
+def iter_src_dirs(root: Path):
+    """Yield every .aprx.src directory under *root* (located via GISProject.json)."""
+    for gis_project in Path(root).rglob("GISProject.json"):
+        src_dir = gis_project.parent
+        if is_aprx_src_dir(src_dir):
+            yield src_dir
