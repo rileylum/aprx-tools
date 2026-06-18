@@ -58,6 +58,11 @@ compare.py:  normalises both sides and unified-diffs them (works on files OR dir
   `hook_post_merge` / `hook_post_checkout` / `hook_post_stash` all call `build_working_copies`,
   which repacks each `.aprx.src/` into its local working `.aprx` (default `local.json`),
   skipping env projects that have no resolvable connections file.
+  `hook_pre_push` runs `aprx verify` — the local mirror of the CI gate — and returns its exit
+  code to block a push of an untokenised or unbuildable source (`git push --no-verify` bypasses).
+  Five hooks are installed in total (`pre-commit`, `pre-push`, `post-stash`, `post-merge`,
+  `post-checkout`); the `pre-push` script omits the install-hint wrapper so `verify`'s own
+  diagnostics show.
 
 - **`install.py`** writes the hook scripts into `.git/hooks/`. Hooks are tagged with the
   `managed-by: aprx-tools` marker — install overwrites its own hooks but refuses to clobber
@@ -87,6 +92,10 @@ adjacent to its `.aprx`. Two modes therefore coexist and the code must preserve 
 - **`bootstrap.py`** implements `aprx connections init` (scan an `.aprx` for distinct connection
   strings, scaffold `aprx.json` + `connections/dev.json` + `local.json.example`) and
   `aprx connections check` (assert every `connections/*.json` defines the same key set).
+- **`verify.py`** implements `aprx verify` — the single exit-coded CI gate (CI-agnostic by
+  design; any runner calls it). Env mode: source is fully tokenised (`scan_tokens` finds no raw
+  values) and every referenced key resolves in every env file. Simple mode: committed `.aprx`
+  matches `pack(src)`. README "Continuous integration" has per-provider trigger snippets.
 - The working `.aprx` is a gitignored build artifact in env mode; `aprx build` (and the
   post-merge/post-checkout hooks) regenerate it from source + `local.json`.
 

@@ -128,3 +128,11 @@ def hook_post_stash() -> None:
     """Repack all .aprx.src directories after a stash pop so the local .aprx
     stays in sync with the checked-out src files."""
     build_working_copies(_git_root())
+
+
+def hook_pre_push() -> int:
+    """Pre-push gate — the local mirror of the CI `aprx verify` check. Blocks a
+    push whose source is untokenised or won't build for every environment.
+    Returns the verify exit code so the hook can fail the push."""
+    from .verify import verify
+    return verify()

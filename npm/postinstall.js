@@ -26,18 +26,26 @@ do
     if [ -x "$candidate" ]; then PYTHON="$candidate"; break; fi
 done`;
 
-// Blocking hooks (pre-commit) fail the git operation on error; non-blocking
-// hooks (post-*) never block it.
-function hookScript(name, blocking) {
+// Blocking hooks fail the git operation on error; non-blocking hooks (post-*)
+// never block it. `hint` adds an "is aprx-tools installed?" message — useful when
+// failure usually means a missing install (pre-commit), but not for pre-push where
+// the command prints its own reason.
+function hookScript(name, blocking, hint = false) {
   const invoke = `"$PYTHON" -m aprx_tools hook ${name}`;
-  const tail = blocking
-    ? `${invoke} || {
+  let tail;
+  if (!blocking) {
+    tail = `${invoke} || true
+`;
+  } else if (hint) {
+    tail = `${invoke} || {
     echo "aprx-tools: hook failed — is aprx-tools installed? (pip install aprx-tools)" >&2
     exit 1
 }
-`
-    : `${invoke} || true
 `;
+  } else {
+    tail = `${invoke}
+`;  // set -e propagates the exit code (and its output)
+  }
   return `#!/usr/bin/env bash
 # ${MARKER}
 set -euo pipefail
@@ -48,7 +56,8 @@ ${tail}`;
 }
 
 const HOOKS = {
-  "pre-commit": hookScript("pre-commit", true),
+  "pre-commit": hookScript("pre-commit", true, true),
+  "pre-push": hookScript("pre-push", true),
   "post-stash": hookScript("post-stash", false),
   "post-merge": hookScript("post-merge", false),
   "post-checkout": hookScript("post-checkout", false),

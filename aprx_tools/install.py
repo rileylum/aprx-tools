@@ -22,11 +22,15 @@ done
 """
 
 
-def _hook_script(hook_name: str, blocking: bool) -> str:
-    """Build a hook script. Blocking hooks (pre-commit) fail the git operation on
-    error; non-blocking hooks (post-*) never block it."""
+def _hook_script(hook_name: str, blocking: bool, hint: bool = False) -> str:
+    """Build a hook script. Blocking hooks fail the git operation on error;
+    non-blocking hooks (post-*) never block it. `hint` adds an "is aprx-tools
+    installed?" message — useful when failure usually means a missing install
+    (pre-commit), but not for pre-push where the command prints its own reason."""
     invoke = f'"$PYTHON" -m aprx_tools hook {hook_name}'
-    if blocking:
+    if not blocking:
+        tail = f"{invoke} || true\n"
+    elif hint:
         tail = (
             f"{invoke} || {{\n"
             f'    echo "aprx-tools: hook failed — is aprx-tools installed? '
@@ -35,12 +39,13 @@ def _hook_script(hook_name: str, blocking: bool) -> str:
             f"}}\n"
         )
     else:
-        tail = f"{invoke} || true\n"
+        tail = f"{invoke}\n"  # set -e propagates the exit code (and its output)
     return f"#!/usr/bin/env bash\n# {MARKER}\nset -euo pipefail\n\n{_PYTHON_PROBE}\n{tail}"
 
 
 HOOKS = {
-    "pre-commit": _hook_script("pre-commit", blocking=True),
+    "pre-commit": _hook_script("pre-commit", blocking=True, hint=True),
+    "pre-push": _hook_script("pre-push", blocking=True),
     "post-stash": _hook_script("post-stash", blocking=False),
     "post-merge": _hook_script("post-merge", blocking=False),
     "post-checkout": _hook_script("post-checkout", blocking=False),

@@ -13,30 +13,42 @@ def git_repo(tmp_path):
     return tmp_path
 
 
+ALL_HOOKS = ("pre-commit", "pre-push", "post-stash", "post-merge", "post-checkout")
+
+
 def test_hooks_are_written(git_repo):
     install_hooks(git_repo)
-    assert (git_repo / ".git" / "hooks" / "pre-commit").exists()
-    assert (git_repo / ".git" / "hooks" / "post-stash").exists()
+    for name in ALL_HOOKS:
+        assert (git_repo / ".git" / "hooks" / name).exists()
 
 
 def test_hooks_are_executable(git_repo):
     install_hooks(git_repo)
-    for name in ("pre-commit", "post-stash"):
+    for name in ALL_HOOKS:
         hook = git_repo / ".git" / "hooks" / name
         assert hook.stat().st_mode & stat.S_IXUSR
 
 
 def test_hooks_contain_marker(git_repo):
     install_hooks(git_repo)
-    for name in ("pre-commit", "post-stash"):
+    for name in ALL_HOOKS:
         hook = git_repo / ".git" / "hooks" / name
         assert MARKER in hook.read_text()
+
+
+def test_pre_push_runs_verify_without_install_hint(git_repo):
+    # pre-push must let `aprx verify` speak for itself, not mask a real failure
+    # with the generic "is aprx-tools installed?" message.
+    install_hooks(git_repo)
+    text = (git_repo / ".git" / "hooks" / "pre-push").read_text()
+    assert "hook pre-push" in text
+    assert "is aprx-tools installed" not in text
 
 
 def test_install_is_idempotent(git_repo):
     install_hooks(git_repo)
     install_hooks(git_repo)
-    for name in ("pre-commit", "post-stash"):
+    for name in ALL_HOOKS:
         assert MARKER in (git_repo / ".git" / "hooks" / name).read_text()
 
 

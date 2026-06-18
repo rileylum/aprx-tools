@@ -112,16 +112,9 @@ aprx explode map.aprx              # connection strings become @@tokens@@
   branch switches; `aprx build` does it manually.
 - **On commit**, the pre-commit hook re-explodes the working `.aprx`, re-tokenising
   it, and stages only the neutral source — the binary is never committed.
-- **CI** builds the environment-specific artifact with `aprx pack map.aprx.src --env uat`
-  and never reads the committed binary:
-
-  ```yaml
-  # .github/workflows/deploy.yml (sketch)
-  - run: pip install aprx-tools
-  - run: aprx connections check                    # every env defines the same keys
-  - run: aprx pack map.aprx.src --env uat -o map.aprx
-  # → publish map.aprx to the UAT portal
-  ```
+- **CI** verifies every PR with `aprx verify` and builds the environment-specific
+  artifact with `aprx pack map.aprx.src --env uat`, never reading the committed
+  binary. See [Continuous integration](#continuous-integration).
 
 Because connection strings never live in the merged content, a PR merge can't carry
 the wrong ones. A connection string with no registered key fails the explode; a
@@ -135,6 +128,76 @@ environment-specific fields (e.g. service URLs), list them in `aprx.json`:
 
 ```json
 { "fields": ["workspaceConnectionString", "serviceUrl"] }
+```
+
+## Continuous integration
+
+The CI gate is a single command — **`aprx verify`** — that exits non-zero on
+failure. It is not GitHub-specific: it is a plain CLI check, so any runner invokes
+it the same way. For an environment-managed project it asserts the committed source
+is fully tokenised (nobody committed without the hooks) and that every token
+resolves in every `connections/<env>.json` (the project builds for each
+environment). For a simple project it asserts the committed `.aprx` is in sync with
+its source.
+
+The job body is identical everywhere — `pip install aprx-tools && aprx verify` —
+only the trigger differs:
+
+**GitHub Actions** — `.github/workflows/aprx.yml`
+
+```yaml
+name: aprx
+on: [pull_request]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.x" }
+      - run: pip install aprx-tools
+      - run: aprx verify
+```
+
+**GitLab CI** — `.gitlab-ci.yml`
+
+```yaml
+aprx-verify:
+  image: python:3
+  script:
+    - pip install aprx-tools
+    - aprx verify
+```
+
+**Azure Pipelines** — `azure-pipelines.yml`
+
+```yaml
+steps:
+  - script: |
+      pip install aprx-tools
+      aprx verify
+    displayName: aprx verify
+```
+
+**Any other runner** (Bitbucket, Jenkins, pre-commit.ci, a local pre-push) — just
+run the command:
+
+```sh
+pip install aprx-tools && aprx verify
+```
+
+The same gate runs **locally as a `pre-push` hook** (installed by `aprx install`), so
+you catch a drifted or incomplete-across-environments source before it leaves your
+machine instead of on a red PR — `git push --no-verify` bypasses it for an
+intentional work-in-progress push.
+
+Pair the CI check with a branch-protection rule requiring it to pass and hook
+installation becomes effectively mandatory — someone can bypass the hooks locally
+but cannot merge a drifted or unbuildable source. To deploy, add a step that builds
+the target environment's artifact and publishes it:
+
+```sh
+aprx pack map.aprx.src --env "$TARGET_ENV" -o map.aprx   # then upload map.aprx
 ```
 
 ## Roadmap
@@ -173,11 +236,12 @@ A GitHub Actions step (or generic CI script) that posts a structured diff as a P
 **`gitattributes` textconv**
 A `.gitattributes` entry that tells GitHub to run `aprx explode` as a textconv driver when rendering diffs. GitHub's PR UI shows the JSON diff inline instead of "binary file changed". No CI required — just config. The lowest-effort improvement available to any team adopting the tool today.
 
-**Sync validation**
-A CI job that verifies the committed `.aprx` binary matches what you'd get by packing the committed `.aprx.src/` — i.e. `aprx compare map.aprx map.aprx.src/` passes. Catches commits made without hooks installed. Pair with a branch protection rule requiring the check to pass and hook installation becomes effectively mandatory: people can bypass locally but cannot merge a drifted binary.
-
 **Connection string enforcement**
-A CI check that reads connection strings from `.aprx.src/` and asserts they match the expected pattern for the target branch — dev branch must not reference prod servers, prod branch must not reference localhost. Catches the wrong-environment deployment error before it reaches the environment.
+`aprx verify` already catches hookless commits and unbuildable environments (see
+[Continuous integration](#continuous-integration)). The remaining piece is *policy*:
+asserting connection strings match the expected pattern for the target branch — dev
+must not reference prod servers, prod must not reference localhost — to catch the
+wrong-environment deployment error before it reaches the environment.
 
 **Automated connection string substitution on push**
 The substitution itself now ships (see [Environment-specific connection

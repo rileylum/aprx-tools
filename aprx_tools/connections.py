@@ -231,3 +231,29 @@ def collect_field_values(obj, fields=DEFAULT_FIELDS) -> "set[str]":
 
     walk(obj)
     return found
+
+
+def scan_tokens(obj, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
+    """Inspect an already-tokenised source. Returns ``(referenced_keys, raw_values)``:
+    keys for field values that are ``@@token@@`` placeholders, and raw_values for
+    field values that are *not* tokens — a raw value means a real connection string
+    leaked into the committed source (e.g. a commit made without the hooks)."""
+    fields = set(fields)
+    regex = _token_regex(token)
+    keys: "set[str]" = set()
+    raw: "set[str]" = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in fields and isinstance(v, str):
+                    m = regex.match(v)
+                    (keys.add(m.group("key")) if m else raw.add(v))
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(obj)
+    return keys, raw

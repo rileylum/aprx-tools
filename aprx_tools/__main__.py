@@ -41,6 +41,13 @@ def main() -> None:
     p.add_argument("a", metavar="a")
     p.add_argument("b", metavar="b")
 
+    # verify
+    p = sub.add_parser("verify", help="CI gate: source is tokenised and builds for every env.")
+    p.add_argument("src_dir", metavar="dir", nargs="?",
+                   help="Specific .aprx.src directory (default: every one in the repo).")
+    p.add_argument("--env", metavar="NAME",
+                   help="Verify only this environment (default: all connections/*.json).")
+
     # connections
     p = sub.add_parser("connections", help="Manage per-environment connection files.")
     csub = p.add_subparsers(dest="connections_command", metavar="<subcommand>")
@@ -54,7 +61,8 @@ def main() -> None:
     # hook (internal — called by the installed hook scripts)
     p = sub.add_parser("hook", help=argparse.SUPPRESS)
     p.add_argument("hook_name",
-                   choices=["pre-commit", "post-stash", "post-merge", "post-checkout"])
+                   choices=["pre-commit", "pre-push", "post-stash",
+                            "post-merge", "post-checkout"])
 
     args = parser.parse_args()
 
@@ -70,6 +78,10 @@ def main() -> None:
     elif args.command == "build":
         from .hooks import build_working_copies
         build_working_copies(src_dir=args.src_dir, env=args.env)
+
+    elif args.command == "verify":
+        from .verify import verify
+        sys.exit(verify(args.src_dir, args.env))
 
     elif args.command == "compare":
         from .compare import compare
@@ -94,12 +106,13 @@ def main() -> None:
 
     elif args.command == "hook":
         from . import hooks
-        {
+        sys.exit({
             "pre-commit": hooks.hook_pre_commit,
+            "pre-push": hooks.hook_pre_push,
             "post-stash": hooks.hook_post_stash,
             "post-merge": hooks.hook_post_merge,
             "post-checkout": hooks.hook_post_checkout,
-        }[args.hook_name]()
+        }[args.hook_name]() or 0)
 
     else:
         parser.print_help()
