@@ -3,11 +3,22 @@
   "version": "0.1.0",
   "description": "Version-control tooling for ArcGIS .aprx project files",
   "license": "MIT",
+  "author": "Riley Lum",
+  "homepage": "https://github.com/rileylum/aprx-tools#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rileylum/aprx-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rileylum/aprx-tools/issues"
+  },
   "scripts": {
     "postinstall": "node npm/postinstall.js"
   },
   "files": [
-    "npm/"
+    "npm/",
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=14"

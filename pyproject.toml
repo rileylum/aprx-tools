@@ -6,8 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "aprx-tools"
 version = "0.1.0"
 description = "Version-control tooling for ArcGIS .aprx project files"
+readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
+authors = [{ name = "Riley Lum", email = "rileywlum@gmail.com" }]
+keywords = ["arcgis", "aprx", "gis", "git", "version-control"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+
+[project.urls]
+Homepage = "https://github.com/rileylum/aprx-tools"
+Repository = "https://github.com/rileylum/aprx-tools"
+Issues = "https://github.com/rileylum/aprx-tools/issues"
 
 [project.scripts]
 aprx = "aprx_tools.__main__:main"
