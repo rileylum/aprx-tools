@@ -64,8 +64,7 @@ on.
 
 ## Installation
 
-Requires **Python 3.9+**. The Python package is the real tool; the npm package is
-only a convenience wrapper that installs the git hooks (see the caveat below).
+Requires **Python 3.9+**.
 
 ### From PyPI
 
@@ -86,18 +85,6 @@ git clone https://github.com/rileylum/aprx-tools.git
 cd aprx-tools
 pip install .
 ```
-
-### Via npm
-
-```sh
-npm install aprx-tools
-```
-
-> **The npm package does not include the tool itself.** It ships only the hook
-> installer, which shells out to `python3 -m aprx_tools`. You must **also** have the
-> Python package installed (`pip install aprx-tools`) and Python 3.9+ on `PATH`, or
-> the hooks will fail. Use npm only if you want the hooks wired up as part of an
-> existing Node project's `install` step.
 
 After installing, run `aprx install` in your repository to set up the git hooks. No
 specific package manager is required in your project — the hooks use whatever Python
@@ -320,27 +307,24 @@ aprx pack map.aprx.src --env "$TARGET_ENV" -o map.aprx   # then upload map.aprx
 
 Publishing is automated by
 [`.github/workflows/release.yml`](.github/workflows/release.yml): publishing a
-GitHub Release builds and uploads the Python package to PyPI and the hook installer
-to npm.
+GitHub Release builds and uploads the Python package to PyPI.
 
 ### One-time setup
 
-- **PyPI** uses trusted publishing (OIDC) — no API token is stored. On PyPI, add a
-  *pending* publisher for project `aprx-tools` → owner `rileylum`, repository
-  `aprx-tools`, workflow `release.yml`, environment `pypi`. (It is *pending* because
-  the project does not exist on PyPI until the first upload.)
-- **npm** uses a token. Create an npm automation (or granular write) token for the
-  package and add it to the repository as the `NPM_TOKEN` secret.
+PyPI uses trusted publishing (OIDC) — no API token is stored. On PyPI, add a
+*pending* publisher for project `aprx-tools` → owner `rileylum`, repository
+`aprx-tools`, workflow `release.yml`, environment `pypi`. (It is *pending* because
+the project does not exist on PyPI until the first upload.)
 
 ### Cutting a release
 
-1. Bump the version in **all three** places — they must stay in sync:
-   `pyproject.toml`, `package.json`, and `aprx_tools/__init__.py`.
+1. Bump the version in **both** places — they must stay in sync: `pyproject.toml`
+   and `aprx_tools/__init__.py`.
 2. Commit, then publish a GitHub Release whose tag is the version prefixed with `v`
    (e.g. `v0.1.0`). The `release` workflow does the rest.
 
-Both registries reject re-uploading an existing version, so every release needs a
-fresh version number.
+PyPI rejects re-uploading an existing version, so every release needs a fresh
+version number.
 
 ## Roadmap
 

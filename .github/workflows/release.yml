@@ -1,10 +1,9 @@
 name: release
 
-# Publishes the Python package to PyPI and the hook-installer to npm when a
-# GitHub Release is published. The tag should match the version declared in
-# pyproject.toml / package.json / aprx_tools/__init__.py (e.g. v0.1.0).
-# See "Releasing" in the README for the one-time registry setup and the per-
-# release version-bump steps.
+# Publishes the Python package to PyPI when a GitHub Release is published. The
+# tag should match the version declared in pyproject.toml / aprx_tools/__init__.py
+# (e.g. v0.1.0). See "Releasing" in the README for the one-time registry setup
+# and the per-release version-bump steps.
 on:
   release:
     types: [published]
@@ -34,21 +33,3 @@ jobs:
           python -m build
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-  npm:
-    name: Publish to npm
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write # enables npm provenance attestation
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-      - name: Publish to npm
-        # Requires an NPM_TOKEN repo secret: an npm automation (or granular
-        # write) token for the aprx-tools package.
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

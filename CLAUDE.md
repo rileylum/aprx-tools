@@ -118,21 +118,17 @@ touching pack.
   bytes. Both explode and pack fall back to byte passthrough and warn on parse failure rather
   than aborting. Preserve this fallback; corrupting binary entries is the main silent-failure risk.
 
-## Distribution (two packages, keep in sync)
+## Distribution
 
-This repo publishes to **both** PyPI and npm:
-- **pip** (`pyproject.toml`): installs the actual Python package + `aprx` entry point.
-- **npm** (`package.json` → `npm/postinstall.js`): ships *only* the hook installer. Its
-  `postinstall` writes the same hook scripts into the consumer's repo and delegates all real
-  work to `python3 -m aprx_tools` — so the npm package is useless without the Python package
-  also installed.
+This repo publishes a single Python package to **PyPI** (`pyproject.toml`): the actual
+package + the `aprx` entry point. Releases are automated by `.github/workflows/release.yml`
+(publish a GitHub Release → trusted-publishing upload to PyPI; see README "Releasing").
 
-The hook-script content is duplicated in `aprx_tools/install.py` (Python) and
-`npm/postinstall.js` (JS) — each generates the four hooks (`pre-commit`, `post-stash`,
-`post-merge`, `post-checkout`) from a small factory (`pre-commit` blocks on failure; the
-`post-*` hooks never block). **If you change a hook script, change it in both places.**
-`__version__` lives in `aprx_tools/__init__.py` and is mirrored in `pyproject.toml` and
-`package.json` — bump all three together.
+`aprx_tools/install.py` generates the five git hooks (`pre-commit`, `pre-push`,
+`post-stash`, `post-merge`, `post-checkout`) from a small factory (`pre-commit` /
+`pre-push` block on failure; the `post-*` hooks never block).
+`__version__` lives in `aprx_tools/__init__.py` and is mirrored in `pyproject.toml` —
+bump both together.
 
 ## Tests
 
