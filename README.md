@@ -25,6 +25,43 @@ binary in `.gitattributes` so git never attempts a text merge on the zip.
 Merge conflicts are resolved in the JSON source files; the pre-commit hook
 regenerates the `.aprx` automatically.
 
+## Two modes
+
+aprx-tools runs in one of two modes. **You never pass a flag to choose between
+them — the mode is detected automatically from which configuration files are
+present** in the project (see [How the mode is detected](#how-the-mode-is-detected)).
+
+| | **Simple mode** | **Environment mode** |
+|---|---|---|
+| **When** | default — no config files present | opt-in — `aprx.json`, `connections/`, or `local.json` present |
+| **Setup** | none — just `aprx install` | `aprx connections init` + per-environment files (see [Setup](#setup)) |
+| **Connection strings** | stored verbatim in the committed source | stored as `@@tokens@@`; real values live in per-environment files |
+| **`explode` does** | pretty-print JSON/XML | pretty-print **+** reverse-tokenise values → `@@tokens@@` |
+| **`pack` does** | minify JSON | minify **+** substitute `@@tokens@@` → values for one environment |
+| **Committed** | both `map.aprx` and `map.aprx.src/` | `map.aprx.src/` **+** `connections/<env>.json`; the `.aprx` is gitignored |
+| **Built for** | one shared binary | a separate binary per environment, built on demand |
+
+Simple mode is the original behaviour and stays the default. If you have never run
+`aprx connections init` (and have no `aprx.json`, `connections/`, or `local.json`),
+the tool behaves exactly as a plain explode/pack round-trip with no substitution of
+any kind.
+
+### How the mode is detected
+
+On every `explode` and `pack`, the tool walks up from the `.aprx` (explode) or the
+`.aprx.src/` directory (pack) toward the git root, looking for any one of these
+opt-in markers:
+
+- **`aprx.json`** — which fields to tokenise and the token format
+- a **`connections/`** directory — one `*.json` per environment
+- a **`local.json`** — the developer's working connections
+
+Finding **none** of them → **simple mode**. Finding **any** of them → **environment
+mode**. The search stops at the first marker found, or at the git root. Because the
+trigger is the *presence of a file you added deliberately*, you cannot fall into
+environment mode by accident — and adding the files is the only thing that turns it
+on.
+
 ## Installation
 
 Install via **pip** or any Python package manager:
@@ -66,7 +103,12 @@ After `aprx install`, the workflow is automatic:
 - **`git pull` / branch switch** — git updates `map.aprx` directly since it
   is a tracked file.
 
-## Environment-specific connection strings
+## Environment mode (connection strings)
+
+This is the setup and detail for **environment mode** — the opt-in mode from
+[Two modes](#two-modes). If you only need a diffable, version-controlled `.aprx`
+and do not promote across environments, you do **not** need any of this; stay in
+simple mode (just `aprx install`).
 
 `.aprx` files embed database connection strings directly in their JSON. Teams that
 promote work across environment branches (dev → uat → prd) need each environment to
@@ -81,22 +123,73 @@ per-environment files. `pack` substitutes tokens → values for a chosen environ
 
 ### Setup
 
+Run these steps once per project. **Step 1 is what switches the project into
+environment mode** — it creates `aprx.json` and `connections/`, which the detector
+keys off (see [How the mode is detected](#how-the-mode-is-detected)).
+
+**1. Scaffold the config from the existing `.aprx`:**
+
 ```sh
 aprx connections init map.aprx
 ```
 
-This scans the project, generates a key for each distinct connection string, and
-writes `aprx.json` (which fields to substitute), `connections/dev.json` (the real
-values it found), and `local.json.example` (a template). Then:
+This scans the project and writes three files:
+
+| File | Purpose |
+|------|---------|
+| `aprx.json` | which fields to substitute (default `workspaceConnectionString`) + token format |
+| `connections/dev.json` | a generated key for every distinct connection string, with the real values it found |
+| `local.json.example` | a template for each developer's own `local.json` |
+
+**2. Tell git which files are environment-specific or per-developer:**
 
 ```sh
 echo "local.json" >> .gitignore   # per-developer, never committed
 echo "*.aprx"      >> .gitignore   # derived artifact, built on demand
-
-cp local.json.example local.json   # fill in your local paths
-# add connections/uat.json, connections/prd.json with the same keys
-aprx explode map.aprx              # connection strings become @@tokens@@
 ```
+
+**3. Create your working connections and the other environments:**
+
+```sh
+cp local.json.example local.json          # fill in your local paths
+# add connections/uat.json, connections/prd.json — same keys as dev.json
+aprx connections check                     # assert every env defines the same keys
+```
+
+**4. Re-explode so the committed source becomes tokenised:**
+
+```sh
+aprx explode map.aprx                       # connection strings become @@tokens@@
+```
+
+From here the hooks take over: commit stages only the tokenised source, and
+`aprx build` / the post-merge hook rebuild your working `.aprx` from source +
+`local.json`.
+
+### What actually gets replaced (and what doesn't)
+
+Being in environment mode does **not** mean every command always substitutes.
+Tokenising (explode) and substituting (pack) each have their own trigger:
+
+- **`explode` tokenises** only when there is at least one connection file *with
+  values* — any `connections/*.json` or a `local.json`. Values found in those files,
+  appearing in a configured field, become `@@tokens@@`. A connection string that is
+  **not** registered in any file is a hard error (so nothing leaks in untokenised).
+- **`pack` substitutes** only when it can resolve a single connection file to use, in
+  this precedence: `--connections FILE` > `--env NAME` (→ `connections/NAME.json`) >
+  `local.json`. If none of these resolves, pack leaves the source **unchanged** —
+  even in environment mode.
+
+Two consequences worth knowing:
+
+- An **empty `connections/` directory** (no `*.json`, no `local.json`) puts the
+  project in environment mode but supplies no values: explode tokenises nothing and
+  pack substitutes nothing. The one visible effect is that `--env uat` becomes a hard
+  error (`connections/uat.json` doesn't exist) instead of a silent no-op.
+- If you have `connections/*.json` but **no `local.json`**, a bare `aprx pack dir`
+  (no `--env`/`--connections`) does not substitute — it would leave `@@tokens@@`
+  literals in the binary. Build for a specific environment with `--env`, or keep a
+  `local.json` for day-to-day work.
 
 ### How it fits together
 
@@ -244,8 +337,8 @@ must not reference prod servers, prod must not reference localhost — to catch 
 wrong-environment deployment error before it reaches the environment.
 
 **Automated connection string substitution on push**
-The substitution itself now ships (see [Environment-specific connection
-strings](#environment-specific-connection-strings)); `aprx pack --env <name>` applies
+The substitution itself now ships (see [Environment mode](#environment-mode-connection-strings));
+`aprx pack --env <name>` applies
 a branch's connection file at pack time. What remains is the packaging glue: a
 GitHub Actions workflow on push to environment branches (`uat`, `trn`, `prd`) that
 runs the build and publishes the artifact, so no developer has to remember to do it
