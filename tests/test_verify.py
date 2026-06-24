@@ -13,26 +13,26 @@ def _src(env_project):
     return env_project.dir / "map.aprx.src"
 
 
-def test_verify_env_passes(env_project):
-    explode(str(env_project.aprx))            # produces tokenised source
+def test_verify_env_passes(env_project, explode_env):
+    explode_env(env_project.aprx)             # produces tokenised source
     assert verify(str(_src(env_project))) == 0
 
 
-def test_verify_fails_when_env_missing_key(env_project):
-    explode(str(env_project.aprx))
+def test_verify_fails_when_env_missing_key(env_project, explode_env):
+    explode_env(env_project.aprx)
     (env_project.dir / "connections" / "uat.json").write_text("{}")   # drop the key
     assert verify(str(_src(env_project))) == 1
 
 
-def test_verify_specific_env(env_project):
-    explode(str(env_project.aprx))
+def test_verify_specific_env(env_project, explode_env):
+    explode_env(env_project.aprx)
     assert verify(str(_src(env_project)), env="uat") == 0
     (env_project.dir / "connections" / "uat.json").write_text("{}")
     assert verify(str(_src(env_project)), env="uat") == 1
 
 
-def test_verify_fails_on_raw_connection_string(env_project):
-    src = explode(str(env_project.aprx))
+def test_verify_fails_on_raw_connection_string(env_project, explode_env):
+    src = explode_env(env_project.aprx)
     pts = src / "map" / "test_points.json"
     # Simulate a commit made without the hooks: a raw connection string in source.
     raw_json = json.dumps(env_project.value)[1:-1]   # JSON-escaped, quotes stripped

@@ -36,14 +36,18 @@ def _first_connection_value(aprx: Path) -> str:
 
 @pytest.fixture
 def env_project(tmp_path, simple_aprx):
-    """An environment-managed project: map.aprx plus connections/{dev,uat}.json and
-    local.json, with `dev` and `local` pointing at the fixture's real connection
-    string and `uat` at a distinct one."""
+    """An environment-managed project: an `aprx.json` declaring `mode: env`, plus
+    map.aprx and connections/{dev,uat}.json and local.json, with `dev` and `local`
+    pointing at the fixture's real connection string and `uat` at a distinct one.
+
+    The `aprx.json` is required now that resolution is strict (ADR-0001): without a
+    declared mode `ProjectConfig.load` errors."""
     proj = tmp_path / "proj"
     (proj / "connections").mkdir(parents=True)
     aprx = proj / "map.aprx"
     shutil.copy(simple_aprx, aprx)
 
+    (proj / "aprx.json").write_text(json.dumps({"mode": "env"}))
     value = _first_connection_value(aprx)
     uat_value = "DATABASE=uat-server;SERVER=uat"
     (proj / "connections" / "dev.json").write_text(json.dumps({"main": value}))
@@ -51,6 +55,27 @@ def env_project(tmp_path, simple_aprx):
     (proj / "local.json").write_text(json.dumps({"main": value}))
 
     return types.SimpleNamespace(dir=proj, aprx=aprx, value=value, uat_value=uat_value)
+
+
+@pytest.fixture
+def explode_env():
+    """Explode an environment-mode Project the way the CLI composition root does:
+    load its `ProjectConfig` and inject `Substitution.for_explode`.
+
+    The pure `explode` defaults to `IDENTITY`; environment tokenisation is the
+    composition root's job (ADR-0002), so integration tests that want neutral source
+    go through this helper rather than calling `explode` bare. It routes through the
+    same `transform.explode_transform` the CLI uses (mode-selected), so the tests
+    exercise the real composition root, not a re-implementation. `project_dir` defaults
+    to the directory holding the .aprx (where its `aprx.json` lives)."""
+    from aprx_tools.explode import explode
+    from aprx_tools.transform import explode_transform
+
+    def _go(aprx, project_dir=None, output_dir=None):
+        transform = explode_transform(project_dir or Path(aprx).parent)
+        return explode(str(aprx), output_dir, transform=transform)
+
+    return _go
 
 
 # A synthetic .aprx (a plain zip of JSON) carrying several *distinct* connection

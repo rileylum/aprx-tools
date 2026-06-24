@@ -6,19 +6,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .util import src_dir_for
-from . import connections as conn
-
-
-def _format_json(data: bytes) -> str:
-    parsed = json.loads(data.decode("utf-8"))
-    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
-
-
-def _format_json_tokenize(data: bytes, value_to_key, fields, token, unknown: set) -> str:
-    parsed = json.loads(data.decode("utf-8"))
-    parsed, unk = conn.tokenize(parsed, value_to_key, fields, token)
-    unknown.update(unk)
-    return json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
+from .transform import IDENTITY
 
 
 def _format_xml(data: bytes) -> str:
@@ -30,12 +18,20 @@ def _format_xml(data: bytes) -> str:
     return ET.tostring(root, encoding="unicode") + "\n"
 
 
-def explode(aprx_path: str, output_dir: str = None) -> Path:
+def explode(aprx_path: str, output_dir: str = None, transform=IDENTITY) -> Path:
     """Extract an .aprx into a version-controllable directory.
 
-    In an environment-managed project, connection strings in configured fields are
-    replaced with @@tokens@@ so the committed source is environment-neutral.
-    Returns the output directory path.
+    The version-control core knows nothing about connections (ADR-0002): it parses
+    each JSON entry, hands it to ``transform.apply`` (which may rewrite it in place),
+    and pretty-prints the result. Simple mode passes the no-op ``IDENTITY``;
+    environment mode passes a ``Substitution`` that tokenises connection strings. The
+    composition root (CLI / hooks) chooses which, so a direct ``aprx explode`` of an
+    environment-mode project still produces neutral source.
+
+    The transform is two-phase: ``apply`` runs per entry, then ``raise_if_problems``
+    fires once after every entry is computed but **before** anything is written — so a
+    bad entry (e.g. an unregistered connection string) aborts the whole operation
+    without deleting or overwriting the existing src directory. Returns the output dir.
     """
     aprx = Path(aprx_path)
     if not aprx.exists():
@@ -43,20 +39,9 @@ def explode(aprx_path: str, output_dir: str = None) -> Path:
 
     out = Path(output_dir) if output_dir else src_dir_for(aprx)
 
-    # Environment tokenisation (None -> simple mode, raw strings kept verbatim).
-    project_dir = conn.find_project_config(aprx.parent)
-    value_to_key = fields = token = None
-    if project_dir is not None:
-        files = conn.connection_files(project_dir)
-        if files:
-            value_to_key = conn.build_reverse_map(files)
-            cfg = conn.load_config(project_dir)
-            fields, token = cfg["fields"], cfg["token"]
-
-    # Compute every entry first so an unregistered connection string fails before
-    # we delete or overwrite the existing src directory.
+    # Compute every entry first so a transform problem fails before we delete or
+    # overwrite the existing src directory.
     payloads = []  # (name, data: str | bytes)
-    unknown: set = set()
     with zipfile.ZipFile(aprx, "r") as zf:
         for name in sorted(zf.namelist()):
             raw = zf.read(name)
@@ -64,10 +49,9 @@ def explode(aprx_path: str, output_dir: str = None) -> Path:
 
             if name.endswith(".json"):
                 try:
-                    if value_to_key is not None:
-                        payload = _format_json_tokenize(raw, value_to_key, fields, token, unknown)
-                    else:
-                        payload = _format_json(raw)
+                    parsed = json.loads(raw.decode("utf-8"))
+                    transform.apply(parsed)
+                    payload = json.dumps(parsed, indent=2, ensure_ascii=False) + "\n"
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
                     print(f"  warning: could not parse JSON in {name}: {e}", file=sys.stderr)
                     payload = raw
@@ -81,11 +65,8 @@ def explode(aprx_path: str, output_dir: str = None) -> Path:
 
             payloads.append((name, payload))
 
-    if unknown:
-        sys.exit(
-            "aprx-tools: unregistered connection string(s) — add them to your "
-            "connection files before committing:\n  " + "\n  ".join(sorted(unknown))
-        )
+    # Phase 2: surface every accumulated problem at once, before touching the filesystem.
+    transform.raise_if_problems()
 
     if out.exists():
         shutil.rmtree(out)

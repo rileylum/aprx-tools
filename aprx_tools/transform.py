@@ -30,13 +30,49 @@ quotes re-serialise with correct escaping. ``Substitution`` adds three things: a
 that picks the direction, a map sourced from ``ProjectConfig``, and ownership of the
 error wording — keeping that wording out of the connection-ignorant core.
 
-(The simple-mode ``IDENTITY`` no-op transform is added when the core grows its
-``transform`` parameter, in issue 0004.)
+The simple-mode counterpart is ``IDENTITY``: a no-op transform whose ``apply`` passes
+the entry through untouched and whose ``raise_if_problems`` never raises. It is what makes
+the seam *real* — the core can be exercised end-to-end with zero connection setup — and it
+is the transform the composition root injects when a Project is in simple mode.
 """
 
 from __future__ import annotations
 
 from . import connections as conn
+
+
+class _Identity:
+    """The simple-mode no-op transform (the singleton :data:`IDENTITY`).
+
+    Version control with nothing swapped: ``apply`` leaves every entry exactly as parsed
+    and ``raise_if_problems`` has nothing to report. Stateless, so a single shared
+    instance serves every explode/pack."""
+
+    def apply(self, parsed):
+        """Pass the parsed entry through untouched."""
+        return parsed
+
+    def raise_if_problems(self):
+        """No-op: a faithful render can never fail."""
+
+
+#: The simple-mode transform — inject this when a Project declares ``mode: simple``.
+IDENTITY = _Identity()
+
+
+def explode_transform(project_dir):
+    """Composition-root helper for the **explode** side of the seam.
+
+    Load a Project's declared mode from ``project_dir`` and return the transform to
+    inject: ``IDENTITY`` for simple mode, ``Substitution.for_explode`` for environment
+    mode. The mode-selection branch lives here, in exactly one place, so the CLI
+    dispatch and the test harness resolve a transform identically and can never drift
+    (a simple project misrouted to ``Substitution``, or vice versa, would be a silent
+    leak). Imported lazily to avoid a config<->transform import cycle."""
+    from .project_config import ProjectConfig
+
+    cfg = ProjectConfig.load(project_dir)
+    return Substitution.for_explode(cfg) if cfg.is_env else IDENTITY
 
 
 class SubstitutionError(Exception):
@@ -104,11 +140,16 @@ class Substitution:
     @classmethod
     def for_explode(cls, project_config) -> "Substitution":
         """Tokenize: replace real connection strings with ``@@key@@`` tokens, producing
-        neutral source. Problems are connection strings registered in no environment
-        file (``reverse_map`` is the union across every environment)."""
+        neutral source. Problems are connection strings registered in no **committed**
+        environment file.
+
+        The map comes from ``committed_reverse_map`` (``connections/*.json`` only, never
+        ``local.json``): committed source must reference only keys that committed
+        environments define, so a value living solely in a developer's ``local.json``
+        is treated as unregistered and aborts explode rather than tokenising silently."""
         return cls(
             operation=conn.tokenize,
-            mapping=project_config.reverse_map(),
+            mapping=project_config.committed_reverse_map(),
             fields=project_config.fields,
             token=project_config.token,
             describe_problems=_explode_problem_message,

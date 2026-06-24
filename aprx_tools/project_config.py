@@ -132,10 +132,40 @@ class ProjectConfig:
         return conn.connection_files(self.dir)
 
     def reverse_map(self) -> "dict[str, str]":
-        """``{connection_string: key}`` unioned across all environments — used to
-        **tokenize** on explode. A value mapped to two keys is a hard error."""
+        """``{connection_string: key}`` unioned across **all** connection files,
+        ``local.json`` included. The full union — kept for any caller that genuinely
+        wants it; explode does **not** use this (see ``committed_reverse_map``). A
+        value mapped to two keys is a hard error."""
         self._require_env("the connection reverse map")
         return conn.build_reverse_map(self.connection_files())
+
+    def committed_connection_files(self) -> "list[Path]":
+        """Only ``connections/*.json`` — the **committed**, team-shared environments,
+        excluding the gitignored, per-developer ``local.json``."""
+        self._require_env("committed connection-file discovery")
+        return conn.committed_connection_files(self.dir)
+
+    def committed_reverse_map(self) -> "dict[str, str]":
+        """``{connection_string: key}`` unioned across the **committed** environments
+        only (``connections/*.json``, never ``local.json``) — used to **tokenize** on
+        explode.
+
+        Tokenising against committed files alone is a safety property: a connection
+        string that exists only in a developer's ``local.json`` is an *unregistered*
+        value, so it surfaces as an explode error instead of silently tokenising into
+        committed source that no teammate's environment can build. Environment mode
+        with no committed connection file is a hard error here — there is nothing to
+        tokenize against, so every real connection string would otherwise be reported
+        as 'unregistered' one-by-one rather than with one clear message."""
+        self._require_env("the committed connection reverse map")
+        files = self.committed_connection_files()
+        if not files:
+            sys.exit(
+                f"aprx-tools: {self.dir} is an environment-mode project but has no "
+                f"{conn.CONNECTIONS_DIR}/*.json to tokenize against — "
+                f"run `aprx connections init` or add a connections file"
+            )
+        return conn.build_reverse_map(files)
 
     def forward_map(self, env=None, connections_file=None) -> "dict[str, str]":
         """``{key: connection_string}`` for one chosen environment — used to
