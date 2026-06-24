@@ -1,10 +1,21 @@
+import json
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from aprx_tools.install import install_hooks, MARKER, _find_git_root
+from aprx_tools.connections import CONFIG_FILENAME
+from aprx_tools.install import install, install_hooks, MARKER, _find_git_root
+
+
+def _config(repo: Path) -> dict:
+    return json.loads((repo / CONFIG_FILENAME).read_text())
+
+
+def _no_prompt(*_a, **_k):
+    raise AssertionError("install must not prompt in this scenario")
 
 
 @pytest.fixture
@@ -64,3 +75,114 @@ def test_does_not_overwrite_foreign_hook(git_repo, capsys):
 def test_fails_outside_git_repo(tmp_path):
     with pytest.raises(SystemExit):
         _find_git_root(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# Mode opt-in (issue 0006) — install records the Project's Mode in aprx.json.
+# --------------------------------------------------------------------------- #
+
+def test_interactive_run_prompts_and_writes_mode(git_repo):
+    # AC1: first interactive run prompts for Mode and writes the choice.
+    install(repo_root=git_repo, config_dir=git_repo,
+            interactive=True, prompt=lambda _msg: "env")
+    assert _config(git_repo)["mode"] == "env"
+
+
+def test_mode_flag_writes_without_prompting(git_repo):
+    # AC2: --mode bypasses the prompt entirely.
+    for mode in ("simple", "env"):
+        repo = git_repo / mode
+        repo.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        install(repo_root=repo, config_dir=repo, mode=mode, prompt=_no_prompt)
+        assert _config(repo)["mode"] == mode
+
+
+def test_non_tty_no_config_defaults_to_simple_with_warning(git_repo, capsys):
+    # AC3: non-TTY, no flag, no config → simple + a warning naming env mode.
+    install(repo_root=git_repo, config_dir=git_repo, interactive=False)
+    assert _config(git_repo)["mode"] == "simple"
+    err = capsys.readouterr().err.lower()
+    assert "environment mode" in err
+    assert "--mode env" in err
+
+
+def test_existing_config_is_honoured_not_overwritten(git_repo, capsys):
+    # AC4: an existing declaration is honoured without a prompt and left intact.
+    (git_repo / CONFIG_FILENAME).write_text(
+        json.dumps({"mode": "env", "token": "@@{key}@@", "fields": ["ws"]})
+    )
+    install(repo_root=git_repo, config_dir=git_repo, prompt=_no_prompt)
+    cfg = _config(git_repo)
+    assert cfg["mode"] == "env"          # unchanged
+    assert cfg["token"] == "@@{key}@@"   # other fields preserved
+    assert cfg["fields"] == ["ws"]
+    assert "env" in capsys.readouterr().out
+
+
+def test_mode_flag_overrides_blank_config_preserving_fields(git_repo):
+    # A pre-existing aprx.json with no `mode` (e.g. from `connections init`) gets
+    # the decided mode merged in without losing its fields/token.
+    (git_repo / CONFIG_FILENAME).write_text(
+        json.dumps({"fields": ["ws"], "token": "T-{key}"})
+    )
+    install(repo_root=git_repo, config_dir=git_repo, mode="env", prompt=_no_prompt)
+    cfg = _config(git_repo)
+    assert cfg["mode"] == "env"
+    assert cfg["fields"] == ["ws"]
+    assert cfg["token"] == "T-{key}"
+
+
+def test_install_also_installs_hooks(git_repo):
+    install(repo_root=git_repo, config_dir=git_repo, mode="simple", prompt=_no_prompt)
+    for name in ALL_HOOKS:
+        assert (git_repo / ".git" / "hooks" / name).exists()
+
+
+def test_prompt_reprompts_until_valid(git_repo):
+    answers = iter(["maybe", "", "env"])
+    install(repo_root=git_repo, config_dir=git_repo,
+            interactive=True, prompt=lambda _msg: next(answers))
+    assert _config(git_repo)["mode"] == "env"
+
+
+def test_mode_flag_matching_existing_is_honoured(git_repo):
+    (git_repo / CONFIG_FILENAME).write_text(json.dumps({"mode": "env"}))
+    install(git_repo, config_dir=git_repo, mode="env", prompt=_no_prompt)
+    assert _config(git_repo)["mode"] == "env"
+
+
+def test_conflicting_mode_flag_refuses_to_overwrite(git_repo):
+    (git_repo / CONFIG_FILENAME).write_text(json.dumps({"mode": "env"}))
+    with pytest.raises(SystemExit):
+        install(git_repo, config_dir=git_repo, mode="simple", prompt=_no_prompt)
+    assert _config(git_repo)["mode"] == "env"  # untouched
+
+
+def test_invalid_mode_is_rejected(git_repo):
+    with pytest.raises(SystemExit):
+        install(git_repo, config_dir=git_repo, mode="environment")
+    assert not (git_repo / CONFIG_FILENAME).exists()
+
+
+def test_eof_at_prompt_exits_cleanly(git_repo):
+    def _eof(_msg):
+        raise EOFError
+    with pytest.raises(SystemExit):
+        install(git_repo, config_dir=git_repo, interactive=True, prompt=_eof)
+
+
+def test_outside_git_repo_writes_no_config(tmp_path):
+    # Resolve-repo-first: a non-repo run must not leave an orphan aprx.json.
+    with pytest.raises(SystemExit):
+        install(config_dir=tmp_path, mode="env")
+    assert not (tmp_path / CONFIG_FILENAME).exists()
+
+
+def test_main_install_mode_flag(git_repo, monkeypatch):
+    # AC5: exercised through the real CLI entry point.
+    monkeypatch.chdir(git_repo)
+    monkeypatch.setattr(sys, "argv", ["aprx", "install", "--mode", "env"])
+    from aprx_tools.__main__ import main
+    main()
+    assert _config(git_repo)["mode"] == "env"

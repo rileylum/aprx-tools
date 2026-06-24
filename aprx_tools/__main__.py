@@ -56,7 +56,10 @@ def main() -> None:
     csub.add_parser("check", help="Verify every environment defines the same keys.")
 
     # install
-    sub.add_parser("install", help="Install git hooks into the current repository.")
+    p = sub.add_parser("install", help="Install git hooks into the current repository.")
+    p.add_argument("--mode", choices=["simple", "env"],
+                   help="Record the project mode without prompting (simple = version "
+                        "control only; env = version control + connection substitution).")
 
     # hook (internal — called by the installed hook scripts)
     p = sub.add_parser("hook", help=argparse.SUPPRESS)
@@ -128,8 +131,8 @@ def main() -> None:
             sys.exit(1)
 
     elif args.command == "install":
-        from .install import install_hooks
-        install_hooks()
+        from .install import install
+        install(mode=args.mode)
 
     elif args.command == "hook":
         from . import hooks

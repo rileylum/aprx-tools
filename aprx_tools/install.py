@@ -1,11 +1,31 @@
-"""Install git hooks into the current (or specified) repository."""
+"""Install git hooks into the current (or specified) repository.
 
+`aprx install` is also the **opt-in point for a Project's Mode** (ADR-0001). On
+first run it decides the Mode (`simple` | `env`) and records it in the committed
+`aprx.json`; every later run honours that declaration so the whole team's hooks
+behave identically. The decision and the config write live here; `ProjectConfig`
+(project_config.py) reads the declaration back when a command resolves a Project's
+mode. (The git hooks themselves still presence-sniff today; issue 0009 switches
+them to read the recorded mode.)"""
+
+import json
 import stat
 import subprocess
 import sys
 from pathlib import Path
 
+from .connections import CONFIG_FILENAME
+from .project_config import ENV, MODES, SIMPLE
+
 MARKER = "managed-by: aprx-tools"
+
+_NON_TTY_WARNING = (
+    "aprx-tools: no TTY and no --mode given — defaulting to simple mode "
+    "(version control only).\n"
+    "  If this project needs connection substitution across deployment targets, "
+    "that is environment mode;\n"
+    "  re-run with `aprx install --mode env` to opt in."
+)
 
 # Probe for a repo-local virtualenv Python, falling back to python3.
 _PYTHON_PROBE = """\
@@ -88,3 +108,121 @@ def install_hooks(repo_root: Path = None) -> None:
         hook_path.write_text(content)
         hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         print(f"  aprx-tools: installed {name} hook")
+
+
+# --------------------------------------------------------------------------- #
+# Mode opt-in — decide and record the Project's Mode in aprx.json (ADR-0001).
+# --------------------------------------------------------------------------- #
+
+def _read_config(config_path: Path) -> "tuple[str | None, dict]":
+    """Return ``(declared_mode, raw_config)`` for an existing ``aprx.json``.
+
+    ``declared_mode`` is ``None`` when there is *no mode decision on record* —
+    the file is absent, unreadable, not a JSON object, or carries no recognised
+    ``mode``. In every such case install is free to decide and write one; a file
+    that already declares a valid mode is honoured untouched."""
+    if not config_path.exists():
+        return None, {}
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, {}
+    if not isinstance(cfg, dict):
+        return None, {}
+    mode = cfg.get("mode")
+    return (mode if mode in MODES else None), cfg
+
+
+def _prompt_mode(prompt) -> str:
+    """Ask the developer to choose a Mode, re-prompting until they pick one.
+
+    Deliberately has no enter-to-default: Mode is the one decision the whole team
+    inherits (ADR-0001), so it must be chosen explicitly rather than fallen into."""
+    while True:
+        try:
+            answer = prompt(
+                "Project mode?\n"
+                "  [simple] version control only\n"
+                "  [env]    version control + connection substitution\n"
+                "> "
+            ).strip().lower()
+        except EOFError:
+            # stdin closed mid-prompt — abort cleanly rather than tracebacking.
+            sys.exit("aprx-tools: no mode selected (end of input) — "
+                     "re-run with `aprx install --mode simple|env`")
+        if answer in ("simple", "s"):
+            return SIMPLE
+        if answer in ("env", "e", "environment"):
+            return ENV
+        print(f"  please answer 'simple' or 'env' (got {answer!r})", file=sys.stderr)
+
+
+def _decide_mode(mode_flag, interactive: bool, prompt) -> str:
+    """Decide a not-yet-recorded Project's Mode.
+
+    Precedence: an explicit ``--mode`` flag wins everywhere; otherwise an
+    interactive shell is prompted; a non-interactive shell with no flag falls
+    back to simple mode and warns loudly that environment mode exists."""
+    if mode_flag is not None:
+        return mode_flag
+    if interactive:
+        return _prompt_mode(prompt)
+    print(_NON_TTY_WARNING, file=sys.stderr)
+    return SIMPLE
+
+
+def _write_mode(config_path: Path, existing: dict, mode: str) -> None:
+    """Record ``mode`` in ``aprx.json``, preserving any other fields already
+    present (e.g. ``fields``/``token`` scaffolded by ``connections init``).
+    Mode is written first for readability."""
+    merged = {"mode": mode}
+    merged.update({k: v for k, v in existing.items() if k != "mode"})
+    config_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+
+
+def install(repo_root: Path = None, config_dir: Path = None, mode: str = None,
+            interactive: bool = None, prompt=input) -> str:
+    """Record the Project's Mode (if not already declared) and install the hooks.
+
+    An existing ``aprx.json`` with a declared mode is honoured without prompting
+    and is **never overwritten** — even an explicit ``--mode`` that conflicts is
+    refused rather than diverging the team. Otherwise the mode is taken from
+    ``mode`` (the ``--mode`` flag), an interactive prompt, or the non-TTY simple
+    default, then written. Returns the effective mode."""
+    # Guard the public entry point: argparse's `choices` only covers the CLI path.
+    if mode is not None and mode not in MODES:
+        sys.exit(f"aprx-tools: unknown mode {mode!r} — "
+                 f"expected one of {', '.join(MODES)}")
+
+    config_dir = Path.cwd() if config_dir is None else Path(config_dir)
+    config_path = config_dir / CONFIG_FILENAME
+
+    # Resolve (and validate) the repo before writing anything, so a run outside a
+    # git repo errors cleanly instead of leaving an orphan aprx.json behind.
+    if repo_root is None:
+        repo_root = _find_git_root(config_dir)
+
+    declared, existing = _read_config(config_path)
+
+    if declared is not None:
+        # A committed team decision already exists (ADR-0001): honour it. A
+        # conflicting --mode is refused, not silently applied — the mode is a
+        # shared, committed choice, so changing it is a deliberate file edit.
+        if mode is not None and mode != declared:
+            sys.exit(
+                f"aprx-tools: {config_path} already declares mode '{declared}'; "
+                f"refusing to overwrite it with '{mode}'. Edit {CONFIG_FILENAME} "
+                f"directly if the team is changing modes."
+            )
+        print(f"  aprx-tools: {CONFIG_FILENAME} already declares mode "
+              f"'{declared}' — leaving it unchanged")
+        effective = declared
+    else:
+        if interactive is None:
+            interactive = sys.stdin.isatty()
+        effective = _decide_mode(mode, interactive, prompt)
+        _write_mode(config_path, existing, effective)
+        print(f"  aprx-tools: recorded mode '{effective}' in {CONFIG_FILENAME}")
+
+    install_hooks(repo_root)
+    return effective
