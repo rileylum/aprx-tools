@@ -4,14 +4,20 @@ The check that every CI system calls. It does NOT need GitHub — it is a plain
 command that exits non-zero on failure, so GitHub Actions, GitLab CI, Azure
 Pipelines, or any runner can invoke it identically.
 
-For an environment-managed project it asserts:
+The Mode decision comes from the authoritative committed ``aprx.json`` via
+``ProjectConfig`` (ADR-0001), never from the old presence-sniffing heuristic — so
+CI checks exactly the Mode the team declared. A Project that declares no Mode fails
+with the "run ``aprx install``" guidance instead of silently passing; the failure is
+collected like any other so the repo-wide gate still reports every project.
+
+For an environment-mode Project it asserts:
   * the committed source is fully tokenised (no raw connection string leaked in —
     i.e. nobody committed without the hooks), and
   * every token the source references has a value in every environment file (the
     project actually builds for each environment).
 
-For a simple (single-environment) project it asserts the committed .aprx is in
-sync with its source.
+For a simple-mode Project it asserts the committed .aprx is in sync with a fresh
+pack of its source.
 """
 
 import json
@@ -21,6 +27,7 @@ import tempfile
 from pathlib import Path
 
 from . import connections as conn
+from .project_config import ProjectConfig
 from .util import iter_src_dirs
 from .pack import pack
 from .compare import compare
@@ -36,9 +43,8 @@ def _project_root() -> Path:
         return Path.cwd()
 
 
-def _verify_env_project(src_dir: Path, project: Path, env: str, problems: list) -> None:
-    cfg = conn.load_config(project)
-    fields, token = cfg["fields"], cfg["token"]
+def _verify_env_project(src_dir: Path, cfg: ProjectConfig, env: str, problems: list) -> None:
+    fields, token = cfg.fields, cfg.token
 
     referenced: set = set()
     raw: set = set()
@@ -57,17 +63,22 @@ def _verify_env_project(src_dir: Path, project: Path, env: str, problems: list) 
             f"hooks?\n      " + "\n      ".join(sorted(raw))
         )
 
-    conn_dir = project / conn.CONNECTIONS_DIR
+    # The committed, team-shared environments — discovered by the one shared rule
+    # (`committed_connection_files`) so explode tokenises against and verify checks
+    # against the identical file set, never a hand-rolled `connections/<env>.json`
+    # copy (issue 0004). `--env` just narrows that same set by file stem.
+    env_files = cfg.committed_connection_files()
     if env:
-        env_files = [conn_dir / f"{env}.json"]
-        if not env_files[0].exists():
+        env_files = [f for f in env_files if f.stem == env]
+        if not env_files:
             problems.append(f"{src_dir.name}: no connections file for env {env!r}")
             return
-    else:
-        env_files = sorted(conn_dir.glob("*.json")) if conn_dir.is_dir() else []
-        if not env_files:
-            problems.append(f"{src_dir.name}: no connections/*.json to verify against")
-            return
+    elif not env_files:
+        problems.append(
+            f"{src_dir.name}: no connections/*.json to verify against — "
+            f"run `aprx connections init` or add a connections file"
+        )
+        return
 
     for env_file in env_files:
         missing = referenced - set(conn.load_connections(env_file))
@@ -102,9 +113,19 @@ def verify(src_dir: str = None, env: str = None) -> int:
 
     problems: list = []
     for sd in targets:
-        project = conn.find_project_config(sd)
-        if project is not None:
-            _verify_env_project(sd, project, env, problems)
+        # Strict resolution (ADR-0001): the Mode is read from the committed `aprx.json`
+        # adjacent to the source, not guessed. A Project with no declared Mode is a
+        # failure carrying the "run `aprx install`" guidance — but as the single
+        # repo-wide CI gate, verify must check *every* project and report all of them,
+        # so an un-migrated project becomes one collected problem rather than a
+        # `ProjectConfig.load` hard-exit that aborts the loop and masks its siblings.
+        try:
+            cfg = ProjectConfig.load(sd.parent)
+        except SystemExit as e:
+            problems.append(f"{sd.name}: {e.code}")
+            continue
+        if cfg.is_env:
+            _verify_env_project(sd, cfg, env, problems)
         else:
             _verify_simple_project(sd, problems)
 
