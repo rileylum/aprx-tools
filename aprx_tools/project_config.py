@@ -32,6 +32,18 @@ MODES = (SIMPLE, ENV)
 _INSTALL_HINT = "run `aprx install` to declare it"
 
 
+def write_mode(config_path, mode: str, existing: "dict | None" = None) -> None:
+    """Write *mode* into an ``aprx.json``, ``mode`` first, preserving any other keys
+    in *existing* (e.g. the ``fields``/``token`` scaffolded by ``connections init``).
+
+    This is the **single writer** of the ``ProjectConfig``-loadable shape. Both
+    ``aprx install`` and ``connections init`` funnel through it so the two paths can
+    never emit divergent files: whichever runs second keeps what the first wrote."""
+    merged = {"mode": mode}
+    merged.update({k: v for k, v in (existing or {}).items() if k != "mode"})
+    Path(config_path).write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
     """A Project's declared configuration, loaded from its ``aprx.json``.

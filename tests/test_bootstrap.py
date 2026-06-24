@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from aprx_tools.bootstrap import _suggest_key, connections_init
+from aprx_tools.bootstrap import _suggest_key, connections_init, connections_check
+from aprx_tools.project_config import ProjectConfig
 
 
 # --------------------------------------------------------------------------- #
@@ -54,13 +55,8 @@ def test_init_then_explode_tokenizes_each_distinctly(multi_conn_aprx, explode_en
     # use the discovered dev mapping as the local working config
     dev = (multi_conn_aprx.dir / "connections" / "dev.json").read_text()
     (multi_conn_aprx.dir / "local.json").write_text(dev)
-    # `connections init` does not yet record a mode (issue 0008); declare env so the
-    # composition root resolves a Substitution rather than erroring on a missing mode.
-    cfg_path = multi_conn_aprx.dir / "aprx.json"
-    cfg = json.loads(cfg_path.read_text())
-    cfg["mode"] = "env"
-    cfg_path.write_text(json.dumps(cfg))
-
+    # `connections init` records `mode: env` itself, so the composition root resolves
+    # a Substitution with no extra setup — explode straight away.
     src = explode_env(multi_conn_aprx.aprx)
 
     blob = "".join(p.read_text() for p in (src / "map").glob("*.json"))
@@ -78,3 +74,99 @@ def test_init_refuses_when_no_connections(tmp_path):
         zf.writestr("GISProject.json", json.dumps({"version": "3.0"}))
     with pytest.raises(SystemExit):
         connections_init(str(empty))
+
+
+# --------------------------------------------------------------------------- #
+# connections init records mode: env (issue 0008)
+# --------------------------------------------------------------------------- #
+
+def test_init_records_env_mode_resolvable_by_projectconfig(multi_conn_aprx):
+    # AC1/AC2: init writes `mode: env`, and ProjectConfig.load resolves it as such.
+    connections_init(str(multi_conn_aprx.aprx))
+
+    cfg_raw = json.loads((multi_conn_aprx.dir / "aprx.json").read_text())
+    assert cfg_raw["mode"] == "env"
+
+    cfg = ProjectConfig.load(multi_conn_aprx.dir)
+    assert cfg.is_env
+
+
+def test_init_refuses_to_switch_a_declared_simple_mode(multi_conn_aprx):
+    # The user-chosen rule: a committed `mode: simple` is a deliberate decision, so
+    # init refuses to silently flip it to env and points at the manual upgrade.
+    cfg_path = multi_conn_aprx.dir / "aprx.json"
+    cfg_path.write_text(json.dumps({"mode": "simple"}))
+
+    with pytest.raises(SystemExit) as exc:
+        connections_init(str(multi_conn_aprx.aprx))
+    msg = str(exc.value)
+    assert "simple" in msg and "mode" in msg          # names the conflict + how to fix
+    assert json.loads(cfg_path.read_text())["mode"] == "simple"   # left untouched
+
+
+def test_init_preserves_fields_token_from_modeless_legacy_config(multi_conn_aprx):
+    # Regression: a legacy aprx.json the *previous* `connections init` scaffolded
+    # (fields + token, no mode). Re-running init declares env mode without clobbering
+    # a custom token back to the engine default.
+    cfg_path = multi_conn_aprx.dir / "aprx.json"
+    cfg_path.write_text(json.dumps(
+        {"fields": ["workspaceConnectionString"], "token": "T-{key}"}
+    ))
+
+    connections_init(str(multi_conn_aprx.aprx))
+
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["mode"] == "env"                 # mode now declared
+    assert cfg["token"] == "T-{key}"            # custom token preserved, not defaulted
+    assert cfg["fields"] == ["workspaceConnectionString"]
+
+
+def test_init_preserves_a_declared_env_config(multi_conn_aprx):
+    # Compose with `aprx install --mode env`: when env mode (and custom token) is
+    # already declared, init sources fields/token from ProjectConfig and keeps them
+    # — mirroring install's preserve test for the init side.
+    cfg_path = multi_conn_aprx.dir / "aprx.json"
+    cfg_path.write_text(json.dumps(
+        {"mode": "env", "token": "T-{key}", "fields": ["workspaceConnectionString"]}
+    ))
+
+    connections_init(str(multi_conn_aprx.aprx))
+
+    cfg = json.loads(cfg_path.read_text())
+    assert cfg["mode"] == "env"
+    assert cfg["token"] == "T-{key}"
+    assert cfg["fields"] == ["workspaceConnectionString"]
+
+
+# --------------------------------------------------------------------------- #
+# connections check — every environment defines the same keys (issue 0008)
+# --------------------------------------------------------------------------- #
+
+def test_check_passes_when_keys_match(env_project, monkeypatch, capsys):
+    # AC3: env_project's dev.json and uat.json both define `main` → exit 0.
+    monkeypatch.chdir(env_project.dir)
+    with pytest.raises(SystemExit) as exc:
+        connections_check()
+    assert exc.value.code == 0
+    assert "same" in capsys.readouterr().out.lower()
+
+
+def test_check_fails_listing_gaps(env_project, monkeypatch, capsys):
+    # AC3: drop `main` from uat so the environments disagree → exit 1 naming the gap.
+    (env_project.dir / "connections" / "uat.json").write_text(json.dumps({}))
+    monkeypatch.chdir(env_project.dir)
+    with pytest.raises(SystemExit) as exc:
+        connections_check()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "uat.json" in out and "main" in out
+
+
+def test_check_rejects_simple_mode_project(tmp_path, monkeypatch):
+    # check is an environment-mode operation; routing through ProjectConfig means a
+    # simple-mode project is rejected rather than silently checking nothing.
+    (tmp_path / "aprx.json").write_text(json.dumps({"mode": "simple"}))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        connections_check()
+    assert exc.value.code != 0
