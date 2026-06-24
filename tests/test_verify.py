@@ -26,6 +26,16 @@ def test_verify_fails_when_env_missing_key(env_project, explode_env):
     assert verify(str(_src(env_project))) == 1
 
 
+def test_verify_env_missing_binary_is_fine(env_project, explode_env):
+    """Scope guard: in environment mode the working `.aprx` is a gitignored build
+    artifact (PRD story 18 / ADR-0001), regenerated per environment from neutral
+    source. Its absence is the *correct* committed state, so the missing-binary rule
+    (simple mode only, issue 0012) must never fire here — verify stays green."""
+    explode_env(env_project.aprx)
+    env_project.aprx.unlink()                 # the build artifact is not committed
+    assert verify(str(_src(env_project))) == 0
+
+
 def test_verify_specific_env(env_project, explode_env):
     explode_env(env_project.aprx)
     assert verify(str(_src(env_project)), env="uat") == 0
@@ -46,13 +56,14 @@ def test_verify_fails_on_raw_connection_string(env_project, explode_env):
 # Simple (single-environment) projects
 # --------------------------------------------------------------------------- #
 
-def _simple_project(tmp_path, simple_aprx):
-    """Lay out a simple-mode Project: the .aprx plus the committed `aprx.json` that
-    declares `mode: simple`. Strict resolution (ADR-0001) means verify reads that file
-    rather than guessing, so it must be present in the working tree."""
-    aprx = tmp_path / "simple.aprx"
+def _simple_project(base, simple_aprx):
+    """Lay out a simple-mode Project under *base*: the .aprx plus the committed
+    `aprx.json` that declares `mode: simple`. Strict resolution (ADR-0001) means verify
+    reads that file rather than guessing, so it must be present in the working tree."""
+    base.mkdir(parents=True, exist_ok=True)
+    aprx = base / "simple.aprx"
     shutil.copy(simple_aprx, aprx)
-    (tmp_path / "aprx.json").write_text(json.dumps({"mode": "simple"}))
+    (base / "aprx.json").write_text(json.dumps({"mode": "simple"}))
     return aprx
 
 
@@ -70,6 +81,52 @@ def test_verify_simple_out_of_sync(tmp_path, simple_aprx):
     data["__tamper__"] = True                  # source no longer matches the binary
     gp.write_text(json.dumps(data))
     assert verify(str(src)) == 1
+
+
+def test_verify_simple_missing_binary(tmp_path, simple_aprx, capsys):
+    """A simple-mode Project commits both the Source and the binary. Source present
+    with the `.aprx` absent is an incomplete commit, not a valid state: the in-sync
+    gate (PRD story 20) has nothing to rebuild against, so verify must FAIL and name
+    the remediation rather than wave it through (the pre-0007 silent `return`)."""
+    aprx = _simple_project(tmp_path, simple_aprx)
+    src = explode(str(aprx))
+    aprx.unlink()                              # binary never committed / deleted
+    assert verify(str(src)) == 1
+    err = capsys.readouterr().err
+    # Name the missing *binary* specifically — "simple.aprx" alone would also be
+    # satisfied by the source dir "simple.aprx.src", so assert it in its message slot.
+    assert "committed simple.aprx is missing" in err
+    assert "aprx pack" in err                  # points at the remediation
+
+
+def test_verify_simple_missing_binary_collected_not_aborting(
+    tmp_path, simple_aprx, monkeypatch, capsys
+):
+    """As the repo-wide gate, a missing binary is one collected problem, not a
+    loop-abort: sibling Projects are still checked (consistent with 0007). Exercised
+    through a real whole-tree run (`verify()` with no src_dir, discovering both
+    Projects via `iter_src_dirs`) so the multi-target loop is actually driven — a
+    single-target call would only ever iterate once and prove nothing about collection.
+    The sibling carries its own distinct out-of-sync problem, so BOTH must surface:
+    that the second problem is reported is the proof the first one did not abort the loop."""
+    _simple_project(tmp_path / "missing", simple_aprx)
+    missing_aprx = explode(str(tmp_path / "missing" / "simple.aprx")).parent / "simple.aprx"
+    missing_aprx.unlink()                       # problem 1: binary is missing
+
+    stale_src = explode(str(_simple_project(tmp_path / "stale", simple_aprx)))
+    gp = stale_src / "GISProject.json"
+    data = json.loads(gp.read_text())
+    data["__tamper__"] = True                   # problem 2: source no longer matches binary
+    gp.write_text(json.dumps(data))
+
+    # No src_dir → discover every Project under the root. tmp_path is not a git repo,
+    # so _project_root() falls back to cwd; point cwd at the tree holding both.
+    monkeypatch.chdir(tmp_path)
+    assert verify() == 1
+    err = capsys.readouterr().err
+    assert "2 problem(s)" in err                # both Projects checked — neither aborted the loop
+    assert "committed simple.aprx is missing" in err
+    assert "out of sync" in err
 
 
 # --------------------------------------------------------------------------- #
