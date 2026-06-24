@@ -38,6 +38,8 @@ is the transform the composition root injects when a Project is in simple mode.
 
 from __future__ import annotations
 
+import sys
+
 from . import connections as conn
 
 
@@ -73,6 +75,34 @@ def explode_transform(project_dir):
 
     cfg = ProjectConfig.load(project_dir)
     return Substitution.for_explode(cfg) if cfg.is_env else IDENTITY
+
+
+def pack_transform(project_dir, env=None, connections_file=None):
+    """Composition-root helper for the **pack** side of the seam.
+
+    The mirror of :func:`explode_transform`. Load a Project's declared mode and return
+    the transform to inject: ``Substitution.for_pack`` for environment mode, ``IDENTITY``
+    for simple mode. Mode is the master switch (ADR-0001): the environment-selection
+    flags (``--env`` / ``--connections``) only mean something in environment mode, so
+    passing one to a simple-mode Project is a hard error here rather than a silently
+    ignored no-op. Keeping the branch in this one place lets the CLI dispatch and the
+    test harness resolve the pack transform identically and never drift. Imported lazily
+    to avoid a config<->transform import cycle.
+
+    A ``Substitution.for_pack`` whose chosen environment resolves to nothing aborts at
+    construction (``ProjectConfig.forward_map`` errors), so an environment-mode pack can
+    never emit a Project full of unsubstituted tokens."""
+    from .project_config import ProjectConfig
+
+    cfg = ProjectConfig.load(project_dir)
+    if cfg.is_env:
+        return Substitution.for_pack(cfg, env, connections_file)
+    if env or connections_file:
+        sys.exit(
+            f"aprx-tools: {cfg.dir} is not an environment-mode project — "
+            f"--env / --connections do not apply to a simple-mode project"
+        )
+    return IDENTITY
 
 
 class SubstitutionError(Exception):

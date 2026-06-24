@@ -84,9 +84,23 @@ def main() -> None:
             sys.exit(str(e))
 
     elif args.command == "pack":
+        # Composition root: resolve the Project's declared mode and inject the matching
+        # pack transform. pack itself is connection-ignorant (ADR-0002) — IDENTITY for
+        # simple mode, Substitution for env mode. The env-selection flags only apply in
+        # env mode; pack_transform rejects them on a simple-mode project.
+        from pathlib import Path
         from .pack import pack
-        pack(args.src_dir, args.output_file,
-             env=args.env, connections_file=args.connections_file)
+        from .transform import pack_transform, SubstitutionError
+
+        src = Path(args.src_dir)
+        if not src.is_dir():
+            sys.exit(f"aprx-tools: {src} is not a directory")
+        transform = pack_transform(src.resolve().parent,
+                                   env=args.env, connections_file=args.connections_file)
+        try:
+            pack(args.src_dir, args.output_file, transform=transform)
+        except SubstitutionError as e:
+            sys.exit(str(e))
 
     elif args.command == "build":
         from .hooks import build_working_copies
