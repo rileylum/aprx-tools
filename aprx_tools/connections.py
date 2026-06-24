@@ -68,15 +68,20 @@ def load_config(project_dir) -> dict:
     return {"fields": list(fields), "token": token}
 
 
+def committed_connection_files(project_dir) -> "list[Path]":
+    """The *committed*, team-shared connection files: ``connections/*.json`` (sorted),
+    excluding the gitignored per-developer ``local.json``.  The single home for the
+    ``connections/*.json`` discovery rule."""
+    conn_dir = Path(project_dir) / CONNECTIONS_DIR
+    return sorted(conn_dir.glob("*.json")) if conn_dir.is_dir() else []
+
+
 def connection_files(project_dir) -> "list[Path]":
-    """All connection files that supply *real* values: ``connections/*.json`` plus
-    ``local.json`` if present.  Used to build the reverse map for tokenisation."""
-    project_dir = Path(project_dir)
-    files = []
-    conn_dir = project_dir / CONNECTIONS_DIR
-    if conn_dir.is_dir():
-        files.extend(sorted(conn_dir.glob("*.json")))
-    local = project_dir / LOCAL_FILE
+    """All connection files that supply *real* values: the committed
+    ``connections/*.json`` plus ``local.json`` if present.  Used to build the reverse
+    map for tokenisation."""
+    files = committed_connection_files(project_dir)
+    local = Path(project_dir) / LOCAL_FILE
     if local.exists():
         files.append(local)
     return files

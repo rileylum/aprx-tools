@@ -7,6 +7,7 @@ from aprx_tools import connections as conn
 from aprx_tools.explode import explode
 from aprx_tools.pack import pack
 from aprx_tools.compare import compare
+from aprx_tools.transform import SubstitutionError
 
 
 # --------------------------------------------------------------------------- #
@@ -184,42 +185,43 @@ def _packed_layer(out):
         return zf.read("map/test_points.json").decode("utf-8")
 
 
-def test_explode_tokenizes(env_project):
-    src = explode(str(env_project.aprx))
+def test_explode_tokenizes(env_project, explode_env):
+    src = explode_env(env_project.aprx)
     pts = (src / "map" / "test_points.json").read_text()
     assert "@@main@@" in pts
     assert env_project.value not in pts
 
 
-def test_pack_substitutes_for_env(env_project):
-    src = explode(str(env_project.aprx))
+def test_pack_substitutes_for_env(env_project, explode_env):
+    src = explode_env(env_project.aprx)
     out = pack(str(src), str(env_project.dir / "map.uat.aprx"), env="uat")
     data = _packed_layer(out)
     assert env_project.uat_value in data
     assert "@@main@@" not in data
 
 
-def test_roundtrip_identical_with_local(env_project):
-    src = explode(str(env_project.aprx))
+def test_roundtrip_identical_with_local(env_project, explode_env):
+    src = explode_env(env_project.aprx)
     rebuilt = pack(str(src), str(env_project.dir / "rebuilt.aprx"),
                    connections_file=str(env_project.dir / "local.json"))
     assert compare(str(env_project.aprx), str(rebuilt)) is False
 
 
-def test_pack_missing_key_fails(env_project):
-    src = explode(str(env_project.aprx))
+def test_pack_missing_key_fails(env_project, explode_env):
+    src = explode_env(env_project.aprx)
     (env_project.dir / "connections" / "broken.json").write_text("{}")
     with pytest.raises(SystemExit):
         pack(str(src), str(env_project.dir / "x.aprx"), env="broken")
 
 
-def test_explode_unknown_connection_fails(env_project):
-    # Point every connection file away from the fixture's real value.
+def test_explode_unknown_connection_fails(env_project, explode_env):
+    # Point every committed connection file away from the fixture's real value.
     for name in ("dev.json", "uat.json"):
         (env_project.dir / "connections" / name).write_text(json.dumps({"main": "OTHER"}))
     (env_project.dir / "local.json").write_text(json.dumps({"main": "OTHER"}))
-    with pytest.raises(SystemExit):
-        explode(str(env_project.aprx))
+    # The transform raises SubstitutionError (the seam owns the wording now, ADR-0002).
+    with pytest.raises(SubstitutionError):
+        explode_env(env_project.aprx)
 
 
 def test_simple_mode_untouched(tmp_path, simple_aprx):
@@ -230,7 +232,7 @@ def test_simple_mode_untouched(tmp_path, simple_aprx):
     assert ".gdb" in pts
 
 
-def test_configurable_field_substitutes_service_urls(tmp_path, simple_aprx):
+def test_configurable_field_substitutes_service_urls(tmp_path, simple_aprx, explode_env):
     # The basemap stores its endpoint under `url`, not workspaceConnectionString.
     # Declaring `fields: ["url"]` in aprx.json makes those substitutable too —
     # the "URLs live under a different field" case, on the existing fixture.
@@ -248,11 +250,11 @@ def test_configurable_field_substitutes_service_urls(tmp_path, simple_aprx):
     assert urls, "fixture should contain service URLs"
 
     mapping = {f"svc{i}": v for i, v in enumerate(sorted(urls))}
-    (proj / "aprx.json").write_text(json.dumps({"fields": ["url"]}))
+    (proj / "aprx.json").write_text(json.dumps({"mode": "env", "fields": ["url"]}))
     (proj / "connections" / "dev.json").write_text(json.dumps(mapping))
     (proj / "local.json").write_text(json.dumps(mapping))
 
-    src = explode(str(aprx))
+    src = explode_env(aprx)
     topo = (src / "map" / "topographic.json").read_text()
     for value in urls:
         assert value not in topo

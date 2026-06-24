@@ -3,7 +3,6 @@ import json
 import pytest
 
 from aprx_tools.bootstrap import _suggest_key, connections_init
-from aprx_tools.explode import explode
 
 
 # --------------------------------------------------------------------------- #
@@ -50,13 +49,19 @@ def test_init_discovers_all_distinct_connections(multi_conn_aprx, capsys):
     assert (multi_conn_aprx.dir / "local.json.example").exists()
 
 
-def test_init_then_explode_tokenizes_each_distinctly(multi_conn_aprx):
+def test_init_then_explode_tokenizes_each_distinctly(multi_conn_aprx, explode_env):
     connections_init(str(multi_conn_aprx.aprx))
     # use the discovered dev mapping as the local working config
     dev = (multi_conn_aprx.dir / "connections" / "dev.json").read_text()
     (multi_conn_aprx.dir / "local.json").write_text(dev)
+    # `connections init` does not yet record a mode (issue 0008); declare env so the
+    # composition root resolves a Substitution rather than erroring on a missing mode.
+    cfg_path = multi_conn_aprx.dir / "aprx.json"
+    cfg = json.loads(cfg_path.read_text())
+    cfg["mode"] = "env"
+    cfg_path.write_text(json.dumps(cfg))
 
-    src = explode(str(multi_conn_aprx.aprx))
+    src = explode_env(multi_conn_aprx.aprx)
 
     blob = "".join(p.read_text() for p in (src / "map").glob("*.json"))
     for value in multi_conn_aprx.values:

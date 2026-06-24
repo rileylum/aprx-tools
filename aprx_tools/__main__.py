@@ -67,8 +67,21 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "explode":
+        # Composition root: resolve the Project's declared mode and inject the
+        # matching transform. explode itself is connection-ignorant (ADR-0002) — the
+        # choice of IDENTITY (simple) vs Substitution (env) is made here, once.
+        from pathlib import Path
         from .explode import explode
-        explode(args.aprx_file, args.output_dir)
+        from .transform import explode_transform, SubstitutionError
+
+        aprx = Path(args.aprx_file)
+        if not aprx.exists():
+            sys.exit(f"aprx-tools: {aprx} not found")
+        transform = explode_transform(aprx.resolve().parent)
+        try:
+            explode(args.aprx_file, args.output_dir, transform=transform)
+        except SubstitutionError as e:
+            sys.exit(str(e))
 
     elif args.command == "pack":
         from .pack import pack
