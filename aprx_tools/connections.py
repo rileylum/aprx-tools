@@ -53,21 +53,6 @@ def find_project_config(start) -> "Path | None":
     return None
 
 
-def load_config(project_dir) -> dict:
-    """Read ``aprx.json`` (fields + token format) with defaults applied."""
-    fields = list(DEFAULT_FIELDS)
-    token = DEFAULT_TOKEN
-    if project_dir is not None:
-        cfg_path = Path(project_dir) / CONFIG_FILENAME
-        if cfg_path.exists():
-            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
-            fields = cfg.get("fields", fields)
-            token = cfg.get("token", token)
-    if "{key}" not in token:
-        sys.exit(f"aprx-tools: token format {token!r} must contain '{{key}}'")
-    return {"fields": list(fields), "token": token}
-
-
 def committed_connection_files(project_dir) -> "list[Path]":
     """The *committed*, team-shared connection files: ``connections/*.json`` (sorted),
     excluding the gitignored per-developer ``local.json``.  The single home for the

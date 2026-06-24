@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from .connections import CONFIG_FILENAME
-from .project_config import ENV, MODES, SIMPLE
+from .project_config import ENV, MODES, SIMPLE, write_mode
 
 MARKER = "managed-by: aprx-tools"
 
@@ -174,10 +174,10 @@ def _decide_mode(mode_flag, interactive: bool, prompt) -> str:
 def _write_mode(config_path: Path, existing: dict, mode: str) -> None:
     """Record ``mode`` in ``aprx.json``, preserving any other fields already
     present (e.g. ``fields``/``token`` scaffolded by ``connections init``).
-    Mode is written first for readability."""
-    merged = {"mode": mode}
-    merged.update({k: v for k, v in existing.items() if k != "mode"})
-    config_path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+
+    Delegates to the single ``project_config.write_mode`` serializer so install and
+    ``connections init`` always emit the same ``ProjectConfig``-loadable shape."""
+    write_mode(config_path, mode, existing)
 
 
 def install(repo_root: Path = None, config_dir: Path = None, mode: str = None,
