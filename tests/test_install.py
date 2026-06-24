@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from aprx_tools.connections import CONFIG_FILENAME
-from aprx_tools.install import install, install_hooks, MARKER, _find_git_root
+from aprx_tools.install import install, install_hooks, MARKER
+from aprx_tools.util import git_root
 
 
 def _config(repo: Path) -> dict:
@@ -74,7 +75,7 @@ def test_does_not_overwrite_foreign_hook(git_repo, capsys):
 
 def test_fails_outside_git_repo(tmp_path):
     with pytest.raises(SystemExit):
-        _find_git_root(tmp_path)
+        git_root(tmp_path)
 
 
 # --------------------------------------------------------------------------- #

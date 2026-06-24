@@ -120,7 +120,7 @@ def test_verify_simple_missing_binary_collected_not_aborting(
     gp.write_text(json.dumps(data))
 
     # No src_dir → discover every Project under the root. tmp_path is not a git repo,
-    # so _project_root() falls back to cwd; point cwd at the tree holding both.
+    # so git_root(required=False) falls back to cwd; point cwd at the tree holding both.
     monkeypatch.chdir(tmp_path)
     assert verify() == 1
     err = capsys.readouterr().err
