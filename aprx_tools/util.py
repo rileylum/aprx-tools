@@ -1,4 +1,32 @@
+import subprocess
+import sys
 from pathlib import Path
+
+
+def git_root(start: Path = None, *, required: bool = True) -> Path:
+    """The repository top-level (``git rev-parse --show-toplevel``) for *start*
+    (default: the current directory).
+
+    One mechanism, two policies — parameterised on ``required`` because the callers
+    genuinely differ:
+
+    - ``required=True`` (``install``): a repo is mandatory — there is no ``.git`` to
+      write hooks into otherwise — so git failing *or* being absent is a hard exit.
+    - ``required=False`` (``verify``): degrade gracefully — fall back to *start* so
+      the CI gate still runs (and simply finds no source) when invoked outside a repo
+      or where git is unavailable.
+    """
+    start = Path.cwd() if start is None else start
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=start, text=True, stderr=subprocess.DEVNULL,
+        )
+        return Path(out.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        if required:
+            sys.exit("aprx-tools: not inside a git repository")
+        return start
 
 
 def src_dir_for(aprx_path: Path) -> Path:

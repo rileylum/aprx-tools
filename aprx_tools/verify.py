@@ -21,26 +21,15 @@ Project commits both Source and binary) and in sync with a fresh pack of its sou
 """
 
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 from . import connections as conn
 from .project_config import ProjectConfig
-from .util import aprx_for_src_dir, iter_src_dirs
+from .util import aprx_for_src_dir, git_root, iter_src_dirs
 from .pack import pack
 from .compare import compare
-
-
-def _project_root() -> Path:
-    try:
-        out = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL
-        )
-        return Path(out.strip())
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Path.cwd()
 
 
 def _verify_env_project(src_dir: Path, cfg: ProjectConfig, env: str, problems: list) -> None:
@@ -116,7 +105,7 @@ def verify(src_dir: str = None, env: str = None) -> int:
     if src_dir is not None:
         targets = [Path(src_dir)]
     else:
-        targets = list(iter_src_dirs(_project_root()))
+        targets = list(iter_src_dirs(git_root(required=False)))
 
     if not targets:
         print("aprx verify: no .aprx.src directories found", file=sys.stderr)

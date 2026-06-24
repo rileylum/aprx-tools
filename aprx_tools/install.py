@@ -10,12 +10,12 @@ them to read the recorded mode.)"""
 
 import json
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
 from .connections import CONFIG_FILENAME
 from .project_config import ENV, MODES, SIMPLE, write_mode
+from .util import git_root
 
 MARKER = "managed-by: aprx-tools"
 
@@ -72,19 +72,9 @@ HOOKS = {
 }
 
 
-def _find_git_root(start: Path) -> Path:
-    try:
-        return Path(subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=start, text=True, stderr=subprocess.DEVNULL
-        ).strip())
-    except subprocess.CalledProcessError:
-        sys.exit("aprx-tools: not inside a git repository")
-
-
 def install_hooks(repo_root: Path = None) -> None:
     if repo_root is None:
-        repo_root = _find_git_root(Path.cwd())
+        repo_root = git_root(Path.cwd())
 
     hooks_dir = repo_root / ".git" / "hooks"
     hooks_dir.mkdir(exist_ok=True)
@@ -200,7 +190,7 @@ def install(repo_root: Path = None, config_dir: Path = None, mode: str = None,
     # Resolve (and validate) the repo before writing anything, so a run outside a
     # git repo errors cleanly instead of leaving an orphan aprx.json behind.
     if repo_root is None:
-        repo_root = _find_git_root(config_dir)
+        repo_root = git_root(config_dir)
 
     declared, existing = _read_config(config_path)
 

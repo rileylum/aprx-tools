@@ -33,43 +33,12 @@ LOCAL_FILE = "local.json"
 # Project discovery & config
 # --------------------------------------------------------------------------- #
 
-def find_project_config(start) -> "Path | None":
-    """Walk up from *start* to the git root looking for a project that opts into
-    connection substitution.  A directory qualifies if it contains ``aprx.json``,
-    a ``connections/`` directory, or a ``local.json``.  Returns that directory, or
-    ``None`` (simple mode — no substitution, original behaviour)."""
-    start = Path(start).resolve()
-    if start.is_file():
-        start = start.parent
-    for d in (start, *start.parents):
-        if (
-            (d / CONFIG_FILENAME).exists()
-            or (d / CONNECTIONS_DIR).is_dir()
-            or (d / LOCAL_FILE).exists()
-        ):
-            return d
-        if (d / ".git").exists():
-            break
-    return None
-
-
 def committed_connection_files(project_dir) -> "list[Path]":
     """The *committed*, team-shared connection files: ``connections/*.json`` (sorted),
     excluding the gitignored per-developer ``local.json``.  The single home for the
     ``connections/*.json`` discovery rule."""
     conn_dir = Path(project_dir) / CONNECTIONS_DIR
     return sorted(conn_dir.glob("*.json")) if conn_dir.is_dir() else []
-
-
-def connection_files(project_dir) -> "list[Path]":
-    """All connection files that supply *real* values: the committed
-    ``connections/*.json`` plus ``local.json`` if present.  Used to build the reverse
-    map for tokenisation."""
-    files = committed_connection_files(project_dir)
-    local = Path(project_dir) / LOCAL_FILE
-    if local.exists():
-        files.append(local)
-    return files
 
 
 def resolve_connections_file(project_dir, env=None, connections_file=None) -> "Path | None":
