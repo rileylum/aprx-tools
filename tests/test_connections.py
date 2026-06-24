@@ -5,7 +5,6 @@ import pytest
 
 from aprx_tools import connections as conn
 from aprx_tools.explode import explode
-from aprx_tools.pack import pack
 from aprx_tools.compare import compare
 from aprx_tools.transform import SubstitutionError
 
@@ -192,26 +191,27 @@ def test_explode_tokenizes(env_project, explode_env):
     assert env_project.value not in pts
 
 
-def test_pack_substitutes_for_env(env_project, explode_env):
+def test_pack_substitutes_for_env(env_project, explode_env, pack_env):
     src = explode_env(env_project.aprx)
-    out = pack(str(src), str(env_project.dir / "map.uat.aprx"), env="uat")
+    out = pack_env(src, output=env_project.dir / "map.uat.aprx", env="uat")
     data = _packed_layer(out)
     assert env_project.uat_value in data
     assert "@@main@@" not in data
 
 
-def test_roundtrip_identical_with_local(env_project, explode_env):
+def test_roundtrip_identical_with_local(env_project, explode_env, pack_env):
     src = explode_env(env_project.aprx)
-    rebuilt = pack(str(src), str(env_project.dir / "rebuilt.aprx"),
-                   connections_file=str(env_project.dir / "local.json"))
+    rebuilt = pack_env(src, output=env_project.dir / "rebuilt.aprx",
+                       connections_file=str(env_project.dir / "local.json"))
     assert compare(str(env_project.aprx), str(rebuilt)) is False
 
 
-def test_pack_missing_key_fails(env_project, explode_env):
+def test_pack_missing_key_fails(env_project, explode_env, pack_env):
     src = explode_env(env_project.aprx)
     (env_project.dir / "connections" / "broken.json").write_text("{}")
-    with pytest.raises(SystemExit):
-        pack(str(src), str(env_project.dir / "x.aprx"), env="broken")
+    # The transform raises SubstitutionError (the seam owns the wording now, ADR-0002).
+    with pytest.raises(SubstitutionError):
+        pack_env(src, output=env_project.dir / "x.aprx", env="broken")
 
 
 def test_explode_unknown_connection_fails(env_project, explode_env):

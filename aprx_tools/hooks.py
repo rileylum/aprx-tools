@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .explode import explode
 from .pack import pack
+from .transform import IDENTITY, SubstitutionError, pack_transform
 from .util import is_aprx_src_dir, iter_src_dirs
 from . import connections as conn
 
@@ -107,13 +108,35 @@ def build_working_copies(root: Path = None, src_dir: str = None, env: str = None
 
     for sd in targets:
         project = conn.find_project_config(sd)
+        has_config = project is not None and (project / conn.CONFIG_FILENAME).exists()
+
+        # An env-managed project with no resolvable connections file can't be built into
+        # a working copy without emitting unsubstituted tokens — skip with a hint.
         if (project is not None and conn.connection_files(project)
                 and conn.resolve_connections_file(project, env, None) is None):
             print(f"  aprx-tools: skipping {sd.name} — no local.json "
                   f"(copy local.json.example and fill in your connections)",
                   file=sys.stderr)
             continue
-        pack(str(sd), str(_aprx_for(sd)), env=env)
+
+        # A connection-managed project that never declared a mode (has connection files
+        # but no aprx.json) can't be resolved strictly (ADR-0001). Skip it rather than
+        # pack with IDENTITY and leak raw @@tokens@@ into the working binary. Full
+        # per-project mode reading is issue 0009; until then aprx.json is the env marker.
+        if project is not None and conn.connection_files(project) and not has_config:
+            print(f"  aprx-tools: skipping {sd.name} — connection files present but no "
+                  f"{conn.CONFIG_FILENAME}; run `aprx install`", file=sys.stderr)
+            continue
+
+        # pack is connection-ignorant now (ADR-0002); the transform carries any env
+        # substitution. These post-* hooks are documented never to block, so a project
+        # whose mode/connections can't be resolved (sys.exit) or whose env is missing a
+        # key (SubstitutionError) downgrades to a skip rather than crashing the hook.
+        try:
+            transform = pack_transform(project, env=env) if has_config else IDENTITY
+            pack(str(sd), str(_aprx_for(sd)), transform=transform)
+        except (SystemExit, SubstitutionError) as e:
+            print(f"  aprx-tools: skipping {sd.name} — {e}", file=sys.stderr)
 
 
 def hook_post_merge() -> None:

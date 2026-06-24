@@ -78,6 +78,29 @@ def explode_env():
     return _go
 
 
+@pytest.fixture
+def pack_env():
+    """Pack an environment-mode Project the way the CLI composition root does:
+    load its `ProjectConfig` and inject `Substitution.for_pack` for the chosen
+    environment (the mirror of `explode_env`).
+
+    The pure `pack` defaults to `IDENTITY`; choosing an environment's connection
+    values is the composition root's job (ADR-0002), so integration tests that want a
+    substituted build go through this helper, which routes through the same
+    `transform.pack_transform` the CLI uses (mode-selected, precedence
+    `connections_file` > `env` > `local.json`). `project_dir` defaults to the parent of
+    the src dir — the project directory where `aprx.json` lives."""
+    from aprx_tools.pack import pack
+    from aprx_tools.transform import pack_transform
+
+    def _go(src, output=None, project_dir=None, env=None, connections_file=None):
+        transform = pack_transform(project_dir or Path(src).resolve().parent,
+                                   env=env, connections_file=connections_file)
+        return pack(str(src), str(output) if output else None, transform=transform)
+
+    return _go
+
+
 # A synthetic .aprx (a plain zip of JSON) carrying several *distinct* connection
 # strings of different shapes — the fixture has only one, so this exercises the
 # multiple-keys path through explode / connections init without a real Pro export.
