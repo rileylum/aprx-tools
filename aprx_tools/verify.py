@@ -16,8 +16,8 @@ For an environment-mode Project it asserts:
   * every token the source references has a value in every environment file (the
     project actually builds for each environment).
 
-For a simple-mode Project it asserts the committed .aprx is in sync with a fresh
-pack of its source.
+For a simple-mode Project it asserts the committed .aprx is present (a simple-mode
+Project commits both Source and binary) and in sync with a fresh pack of its source.
 """
 
 import json
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import connections as conn
 from .project_config import ProjectConfig
-from .util import iter_src_dirs
+from .util import aprx_for_src_dir, iter_src_dirs
 from .pack import pack
 from .compare import compare
 
@@ -89,9 +89,20 @@ def _verify_env_project(src_dir: Path, cfg: ProjectConfig, env: str, problems: l
 
 
 def _verify_simple_project(src_dir: Path, problems: list) -> None:
-    aprx = src_dir.parent / src_dir.stem
+    aprx = aprx_for_src_dir(src_dir)  # util owns the src↔binary naming convention
     if not aprx.exists():
-        return  # nothing committed to compare against
+        # A simple-mode Project commits both the Source and the binary; the .aprx is
+        # the committed artifact, the Source its diffable rendering (CLAUDE.md "What
+        # this is"). Source present + binary absent is an incomplete commit, not a
+        # valid state, so the in-sync gate (PRD story 20) has nothing to check and
+        # the repo cannot be rebuilt — report it rather than passing silently. (Env
+        # mode's missing .aprx is a gitignored build artifact and never reaches here:
+        # this runs only on verify()'s `else` branch, ADR-0001 / issue 0007.)
+        problems.append(
+            f"{src_dir.name}: committed {aprx.name} is missing — pack the source and "
+            f"commit it (run the hooks, or `aprx pack {src_dir.name}`)"
+        )
+        return
     with tempfile.TemporaryDirectory() as tmp:
         rebuilt = pack(str(src_dir), str(Path(tmp) / aprx.name))
         if compare(str(aprx), str(rebuilt)):
