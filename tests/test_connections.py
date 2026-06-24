@@ -83,6 +83,47 @@ def test_special_chars_survive_substitution_roundtrip(value):
 
 
 # --------------------------------------------------------------------------- #
+# Engine: shared traversal reaches deeply-nested configured fields
+# --------------------------------------------------------------------------- #
+
+def _nested(value):
+    """A configured field buried under dict -> list -> dict -> list -> dict, so the
+    shared walk has to descend several mixed dict/list levels to reach it."""
+    return {"a": [{"b": {"c": [{"workspaceConnectionString": value, "keep": value}]}}]}
+
+
+def _nested_conn(doc):
+    return doc["a"][0]["b"]["c"][0]["workspaceConnectionString"]
+
+
+def test_traversal_tokenizes_nested_field():
+    doc, unknown = conn.tokenize(_nested("DB=deep"), {"DB=deep": "main"})
+    assert _nested_conn(doc) == "@@main@@"
+    assert unknown == set()
+    # the non-configured sibling key is left raw even at depth
+    assert doc["a"][0]["b"]["c"][0]["keep"] == "DB=deep"
+
+
+def test_traversal_substitutes_nested_field():
+    doc, missing = conn.substitute(_nested("@@main@@"), {"main": "DB=real"})
+    assert _nested_conn(doc) == "DB=real"
+    assert missing == set()
+
+
+def test_traversal_collects_nested_field():
+    assert conn.collect_field_values(_nested("DB=deep")) == {"DB=deep"}
+
+
+def test_traversal_scans_nested_field():
+    keys, raw = conn.scan_tokens(_nested("@@main@@"))
+    assert keys == {"main"}
+    assert raw == set()
+    keys, raw = conn.scan_tokens(_nested("DB=leaked"))
+    assert keys == set()
+    assert raw == {"DB=leaked"}
+
+
+# --------------------------------------------------------------------------- #
 # Engine: reverse map
 # --------------------------------------------------------------------------- #
 

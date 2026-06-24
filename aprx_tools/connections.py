@@ -151,27 +151,22 @@ def _token_regex(token: str) -> "re.Pattern":
     return re.compile("^" + re.escape(prefix) + r"(?P<key>.+?)" + re.escape(suffix) + "$")
 
 
-def substitute(obj, key_to_value, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
-    """Replace ``@@key@@`` tokens in *fields* with their real values.
+def _walk_fields(obj, fields, visit) -> None:
+    """The one traversal the four field operations share.
 
-    Returns ``(obj, missing_keys)``; a token whose key is absent from
-    *key_to_value* is collected in ``missing_keys`` (caller fails fast)."""
+    Descends *obj* depth-first and calls ``visit(node, key, value)`` for every dict
+    entry whose key is a configured field carrying a string value — ``node`` is the
+    owning dict (so a visitor can rewrite ``node[key]`` in place).  A matched field is
+    a leaf: its value is handed to the visitor, not descended into.  Every other
+    branch (non-field keys, nested dicts, list items) is recursed.  Tokenize,
+    substitute, token scan and value collect differ only in *visit*."""
     fields = set(fields)
-    regex = _token_regex(token)
-    missing: "set[str]" = set()
 
     def walk(node):
         if isinstance(node, dict):
             for k, v in node.items():
                 if k in fields and isinstance(v, str):
-                    m = regex.match(v)
-                    if m:
-                        key = m.group("key")
-                        if key in key_to_value:
-                            node[k] = key_to_value[key]
-                        else:
-                            missing.add(key)
-                    # a literal (already-real) value is left untouched
+                    visit(node, k, v)
                 else:
                     walk(v)
         elif isinstance(node, list):
@@ -179,6 +174,27 @@ def substitute(obj, key_to_value, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
                 walk(item)
 
     walk(obj)
+
+
+def substitute(obj, key_to_value, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
+    """Replace ``@@key@@`` tokens in *fields* with their real values.
+
+    Returns ``(obj, missing_keys)``; a token whose key is absent from
+    *key_to_value* is collected in ``missing_keys`` (caller fails fast)."""
+    regex = _token_regex(token)
+    missing: "set[str]" = set()
+
+    def visit(node, k, v):
+        m = regex.match(v)
+        if m:
+            key = m.group("key")
+            if key in key_to_value:
+                node[k] = key_to_value[key]
+            else:
+                missing.add(key)
+        # a literal (already-real) value is left untouched
+
+    _walk_fields(obj, fields, visit)
     return obj, missing
 
 
@@ -188,48 +204,30 @@ def tokenize(obj, value_to_key, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
     Returns ``(obj, unknown_values)``; a field value that is neither already a token
     nor present in *value_to_key* is collected in ``unknown_values`` (caller fails
     fast — it means an unregistered connection string)."""
-    fields = set(fields)
     regex = _token_regex(token)
     unknown: "set[str]" = set()
 
-    def walk(node):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k in fields and isinstance(v, str):
-                    if regex.match(v):
-                        continue  # already tokenised
-                    if v in value_to_key:
-                        node[k] = token.format(key=value_to_key[v])
-                    else:
-                        unknown.add(v)
-                else:
-                    walk(v)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
+    def visit(node, k, v):
+        if regex.match(v):
+            return  # already tokenised
+        if v in value_to_key:
+            node[k] = token.format(key=value_to_key[v])
+        else:
+            unknown.add(v)
 
-    walk(obj)
+    _walk_fields(obj, fields, visit)
     return obj, unknown
 
 
 def collect_field_values(obj, fields=DEFAULT_FIELDS) -> "set[str]":
     """All distinct string values found under *fields* — used by ``connections init``
     to discover the connection strings that need keys."""
-    fields = set(fields)
     found: "set[str]" = set()
 
-    def walk(node):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k in fields and isinstance(v, str):
-                    found.add(v)
-                else:
-                    walk(v)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
+    def visit(node, k, v):
+        found.add(v)
 
-    walk(obj)
+    _walk_fields(obj, fields, visit)
     return found
 
 
@@ -238,22 +236,13 @@ def scan_tokens(obj, fields=DEFAULT_FIELDS, token=DEFAULT_TOKEN):
     keys for field values that are ``@@token@@`` placeholders, and raw_values for
     field values that are *not* tokens — a raw value means a real connection string
     leaked into the committed source (e.g. a commit made without the hooks)."""
-    fields = set(fields)
     regex = _token_regex(token)
     keys: "set[str]" = set()
     raw: "set[str]" = set()
 
-    def walk(node):
-        if isinstance(node, dict):
-            for k, v in node.items():
-                if k in fields and isinstance(v, str):
-                    m = regex.match(v)
-                    (keys.add(m.group("key")) if m else raw.add(v))
-                else:
-                    walk(v)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
+    def visit(node, k, v):
+        m = regex.match(v)
+        (keys.add(m.group("key")) if m else raw.add(v))
 
-    walk(obj)
+    _walk_fields(obj, fields, visit)
     return keys, raw
