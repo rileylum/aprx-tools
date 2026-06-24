@@ -27,40 +27,60 @@ regenerates the `.aprx` automatically.
 
 ## Two modes
 
-aprx-tools runs in one of two modes. **You never pass a flag to choose between
-them — the mode is detected automatically from which configuration files are
-present** in the project (see [How the mode is detected](#how-the-mode-is-detected)).
+aprx-tools runs in one of two modes. **The mode is declared once, explicitly, in a
+committed `aprx.json`** (`"mode": "simple" | "env"`) and read from there by every
+command and every teammate's hooks. You choose it when you run `aprx install` (see
+[How the mode is declared](#how-the-mode-is-declared)); you never pass a flag to
+`explode`/`pack` to switch between them.
 
 | | **Simple mode** | **Environment mode** |
 |---|---|---|
-| **When** | default — no config files present | opt-in — `aprx.json`, `connections/`, or `local.json` present |
-| **Setup** | none — just `aprx install` | `aprx connections init` + per-environment files (see [Setup](#setup)) |
+| **When** | default — version control only | opt-in — version control + connection substitution |
+| **`aprx.json`** | `{ "mode": "simple" }` | `{ "mode": "env", … }` |
+| **Setup** | `aprx install` (records `mode: simple`) | `aprx connections init` + per-environment files (see [Setup](#setup)) |
 | **Connection strings** | stored verbatim in the committed source | stored as `@@tokens@@`; real values live in per-environment files |
 | **`explode` does** | pretty-print JSON/XML | pretty-print **+** reverse-tokenise values → `@@tokens@@` |
 | **`pack` does** | minify JSON | minify **+** substitute `@@tokens@@` → values for one environment |
 | **Committed** | both `map.aprx` and `map.aprx.src/` | `map.aprx.src/` **+** `connections/<env>.json`; the `.aprx` is gitignored |
 | **Built for** | one shared binary | a separate binary per environment, built on demand |
 
-Simple mode is the original behaviour and stays the default. If you have never run
-`aprx connections init` (and have no `aprx.json`, `connections/`, or `local.json`),
-the tool behaves exactly as a plain explode/pack round-trip with no substitution of
-any kind.
+Simple mode is the original behaviour and stays the default for new projects. A
+simple-mode project still commits a one-line `aprx.json` (`{ "mode": "simple" }`) —
+the explicit opt-in record — but otherwise behaves as a plain explode/pack
+round-trip with no substitution of any kind.
 
-### How the mode is detected
+### How the mode is declared
 
-On every `explode` and `pack`, the tool walks up from the `.aprx` (explode) or the
-`.aprx.src/` directory (pack) toward the git root, looking for any one of these
-opt-in markers:
+The mode lives in the project's committed `aprx.json` and is **read, never guessed**.
+There is no detection heuristic: the tool does not sniff for a `connections/`
+directory or a `local.json` to infer the mode. A project with no `aprx.json`, or one
+whose `aprx.json` has no `mode`, is a **hard error** that tells you to run
+`aprx install` (see [Upgrading an existing repository](#upgrading-an-existing-repository)).
 
-- **`aprx.json`** — which fields to tokenise and the token format
-- a **`connections/`** directory — one `*.json` per environment
-- a **`local.json`** — the developer's working connections
+`aprx install` is where the mode is set, the first time anyone runs it:
 
-Finding **none** of them → **simple mode**. Finding **any** of them → **environment
-mode**. The search stops at the first marker found, or at the git root. Because the
-trigger is the *presence of a file you added deliberately*, you cannot fall into
-environment mode by accident — and adding the files is the only thing that turns it
-on.
+- **Interactively**, it prompts: `simple` (version control only) or `env` (version
+  control + connection substitution).
+- **`aprx install --mode simple|env`** records the mode without prompting — use this
+  in scripts and CI.
+- In a **non-interactive shell with no `--mode` and no existing `aprx.json`**, it
+  defaults to **simple mode** and prints a loud warning telling you environment mode
+  exists and how to opt in.
+- An **existing `aprx.json` is always honoured** without a prompt; a conflicting
+  `--mode` is **refused** (not silently applied), because the mode is a shared,
+  committed team decision. To change modes, edit `aprx.json` deliberately.
+
+> **Run `aprx install` from the project's directory** — the one that holds (or will
+> hold) the `.aprx` and its `aprx.json`. `install` writes `aprx.json` into the
+> directory you run it from, while the git hooks always install at the repo root. If
+> your `.aprx` lives in a subdirectory and you run `install` at the repo root, the
+> mode is recorded where `explode`/`pack` won't look for it — and you'll hit the
+> "no `aprx.json` — run `aprx install`" error right after running exactly that.
+
+Because the mode is a committed value rather than three independent file-presence
+signals, two developers can never resolve the same repo to different modes, and an
+environment-mode project can never be misread as simple and commit raw connection
+strings.
 
 ## Installation
 
@@ -89,6 +109,41 @@ pip install .
 After installing, run `aprx install` in your repository to set up the git hooks. No
 specific package manager is required in your project — the hooks use whatever Python
 interpreter is available in your environment.
+
+## Upgrading an existing repository
+
+> **Breaking change.** Releases that introduce strict mode resolution no longer guess
+> a project's mode from which files happen to be present. The mode must be **declared**
+> in a committed `aprx.json`. A repository set up with an older version has no `mode`
+> on record, so the first command you run against it will stop with:
+>
+> ```
+> aprx-tools: <dir> has no aprx.json — this project has no declared mode;
+> run `aprx install` to declare it
+> ```
+>
+> (or, if an `aprx.json` exists but predates the `mode` field, `… declares no 'mode'
+> — run `aprx install` to declare it`).
+
+**The rule, plainly: no `aprx.json`, or an `aprx.json` with no `mode`, → run
+`aprx install`.** That single command records the mode and unblocks the repo — there
+is no automatic back-compat inference.
+
+To upgrade, **from each project's directory** (the one holding the `.aprx` — see the
+note in [How the mode is declared](#how-the-mode-is-declared)):
+
+```sh
+aprx install                 # prompts: simple or env, then records it in aprx.json
+# or, non-interactively:
+aprx install --mode simple   # version control only
+aprx install --mode env      # version control + connection substitution
+```
+
+Commit the resulting `aprx.json` so the whole team inherits the same mode. A project
+that was already using connection substitution (it has a `connections/` directory)
+should choose **`env`**; a plain version-control project chooses **`simple`**. You
+only do this once per project; teammates who pull the committed `aprx.json` just run
+`aprx install` to get the hooks and the mode is already there for them.
 
 ## Usage
 
@@ -133,9 +188,9 @@ per-environment files. `pack` substitutes tokens → values for a chosen environ
 
 ### Setup
 
-Run these steps once per project. **Step 1 is what switches the project into
-environment mode** — it creates `aprx.json` and `connections/`, which the detector
-keys off (see [How the mode is detected](#how-the-mode-is-detected)).
+Run these steps once per project. **Step 1 is what puts the project into environment
+mode** — `connections init` writes `"mode": "env"` into `aprx.json` (the declaration
+every command reads back; see [How the mode is declared](#how-the-mode-is-declared)).
 
 **1. Scaffold the config from the existing `.aprx`:**
 
@@ -147,7 +202,7 @@ This scans the project and writes three files:
 
 | File | Purpose |
 |------|---------|
-| `aprx.json` | which fields to substitute (default `workspaceConnectionString`) + token format |
+| `aprx.json` | `"mode": "env"` **+** which fields to substitute (default `workspaceConnectionString`) + token format |
 | `connections/dev.json` | a generated key for every distinct connection string, with the real values it found |
 | `local.json.example` | a template for each developer's own `local.json` |
 
@@ -192,10 +247,11 @@ Tokenising (explode) and substituting (pack) each have their own trigger:
 
 Two consequences worth knowing:
 
-- An **empty `connections/` directory** (no `*.json`, no `local.json`) puts the
-  project in environment mode but supplies no values: explode tokenises nothing and
-  pack substitutes nothing. The one visible effect is that `--env uat` becomes a hard
-  error (`connections/uat.json` doesn't exist) instead of a silent no-op.
+- An **environment-mode project with no connection values yet** (`"mode": "env"` but
+  no `connections/*.json` and no `local.json`) supplies nothing to swap: explode
+  tokenises nothing and pack substitutes nothing. The one visible effect is that
+  `--env uat` becomes a hard error (`connections/uat.json` doesn't exist) instead of a
+  silent no-op.
 - If you have `connections/*.json` but **no `local.json`**, a bare `aprx pack dir`
   (no `--env`/`--connections`) does not substitute — it would leave `@@tokens@@`
   literals in the binary. Build for a specific environment with `--env`, or keep a

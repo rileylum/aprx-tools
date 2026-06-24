@@ -71,24 +71,34 @@ compare.py:  normalises both sides and unified-diffs them (works on files OR dir
 
 ### Connection-string substitution (environment mode)
 
-A project opts in by having an `aprx.json`, a `connections/` directory, or a `local.json`
-adjacent to its `.aprx`. Two modes therefore coexist and the code must preserve both:
+A project's **Mode is declared, not detected** (ADR-0001). It is read from a `"mode"`
+field (`"simple" | "env"`) in a committed `aprx.json` via `ProjectConfig.load`
+(`project_config.py`) — the one object that owns the resolution ritual (mode, fields,
+token, connection-file discovery). There is **no presence-sniffing**: the tool never
+infers a mode from a stray `connections/` dir or `local.json`. Resolution is **strict**
+— a project with no `aprx.json`, or one whose `aprx.json` omits `mode`, is a hard exit
+directing the user to `aprx install`. Two modes coexist and the code must preserve both:
 
-- **Simple mode** (no connection config found): explode/pack behave exactly as before —
-  this is what keeps the existing tests green. Detection is `connections.find_project_config()`
-  returning `None`.
-- **Environment mode**: `explode` replaces configured field values (default
-  `workspaceConnectionString`) with `@@token@@` placeholders; `pack` substitutes them back
-  for a chosen environment.
+- **Simple mode** (`"mode": "simple"`): explode/pack behave exactly as before — this is
+  what keeps the existing tests green. The CLI hands the core the no-op `IDENTITY`
+  transform.
+- **Environment mode** (`"mode": "env"`): `explode` replaces configured field values
+  (default `workspaceConnectionString`) with `@@token@@` placeholders; `pack` substitutes
+  them back for a chosen environment. The CLI builds a `Substitution` transform from the
+  `ProjectConfig` and injects it (see ADR-0002, the transform seam).
+
+`aprx install` is the opt-in point that writes the `mode` into `aprx.json` (prompt,
+`--mode simple|env`, or non-TTY simple default); `connections init` writes `"mode": "env"`
+as it scaffolds. An existing declaration is honoured untouched.
 
 - **`connections.py`** is the pure engine. It operates on **parsed JSON objects, never text**,
   so connection strings containing `\`, `;`, `"` re-serialise with correct escaping.
   `tokenize` (value → token, on explode) and `substitute` (token → value, on pack) return the
   set of *unknown values* / *missing keys* so callers fail fast — an unregistered connection
   string aborts explode; a missing env key aborts pack, before any output is written.
-  `find_project_config`, `resolve_connections_file` (precedence: `--connections` > `--env` >
-  `local.json`), and `build_reverse_map` (union across all env files; errors if one value maps
-  to two keys) live here too.
+  `resolve_connections_file` (precedence: `--connections` > `--env` > `local.json`) and
+  `build_reverse_map` (union across all env files; errors if one value maps to two keys) live
+  here too — driven by `ProjectConfig`, not by file-presence detection.
 - **`bootstrap.py`** implements `aprx connections init` (scan an `.aprx` for distinct connection
   strings, scaffold `aprx.json` + `connections/dev.json` + `local.json.example`) and
   `aprx connections check` (assert every `connections/*.json` defines the same key set).
