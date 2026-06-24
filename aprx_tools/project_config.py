@@ -67,7 +67,13 @@ class ProjectConfig:
                 f"this project has no declared mode; {_INSTALL_HINT}"
             )
 
-        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as err:
+            sys.exit(f"aprx-tools: {cfg_path} is not valid JSON ({err})")
+        if not isinstance(cfg, dict):
+            sys.exit(f"aprx-tools: {cfg_path} must be a JSON object — {_INSTALL_HINT}")
+
         if "mode" not in cfg:
             sys.exit(
                 f"aprx-tools: {cfg_path} declares no 'mode' — {_INSTALL_HINT}"
@@ -84,8 +90,15 @@ class ProjectConfig:
         if "{key}" not in token:
             sys.exit(f"aprx-tools: token format {token!r} must contain '{{key}}'")
 
-        fields = tuple(cfg.get("fields", conn.DEFAULT_FIELDS))
-        return cls(dir=project_dir, mode=mode, fields=fields, token=token)
+        fields = cfg.get("fields", conn.DEFAULT_FIELDS)
+        # A bare string would be shredded into characters by tuple(), silently
+        # matching no field and leaking raw connection strings — reject it.
+        if isinstance(fields, str) or not isinstance(fields, (list, tuple)):
+            sys.exit(
+                f"aprx-tools: 'fields' in {cfg_path} must be a list of field names"
+            )
+
+        return cls(dir=project_dir, mode=mode, fields=tuple(fields), token=token)
 
     # ----------------------------------------------------------------- #
     # Mode predicate
@@ -102,14 +115,26 @@ class ProjectConfig:
     # explode (reverse) vs pack (forward) want different maps.
     # ----------------------------------------------------------------- #
 
+    def _require_env(self, what) -> None:
+        """Mode is the master switch: substitution is meaningless in simple mode,
+        so calling an env-only helper there is a hard error rather than a silent
+        no-op that might pick up a stray ``local.json``."""
+        if not self.is_env:
+            sys.exit(
+                f"aprx-tools: {self.dir} is a simple-mode project — "
+                f"{what} is only available in environment mode"
+            )
+
     def connection_files(self) -> "list[Path]":
         """Every connection file supplying real values: ``connections/*.json``
         plus ``local.json`` if present."""
+        self._require_env("connection-file discovery")
         return conn.connection_files(self.dir)
 
     def reverse_map(self) -> "dict[str, str]":
         """``{connection_string: key}`` unioned across all environments — used to
         **tokenize** on explode. A value mapped to two keys is a hard error."""
+        self._require_env("the connection reverse map")
         return conn.build_reverse_map(self.connection_files())
 
     def forward_map(self, env=None, connections_file=None) -> "dict[str, str]":
@@ -117,6 +142,7 @@ class ProjectConfig:
         **substitute** on pack. Precedence: ``connections_file`` > ``env`` >
         ``local.json`` (see ``connections.resolve_connections_file``). Errors if
         nothing resolves, so pack never emits a Project full of bare tokens."""
+        self._require_env("the connection forward map")
         path = conn.resolve_connections_file(self.dir, env, connections_file)
         if path is None:
             sys.exit(

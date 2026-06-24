@@ -79,6 +79,34 @@ def test_load_rejects_token_without_key_placeholder(tmp_path):
     assert "{key}" in str(exc.value)
 
 
+def test_load_rejects_malformed_json(tmp_path):
+    # A merge-conflict / typo'd aprx.json must fail loudly with our diagnostic,
+    # not a raw json.JSONDecodeError traceback.
+    (tmp_path / conn.CONFIG_FILENAME).write_text("{not: valid", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        ProjectConfig.load(tmp_path)
+    assert str(tmp_path / conn.CONFIG_FILENAME) in str(exc.value)
+
+
+@pytest.mark.parametrize("payload", ["42", "null", '"simple"', "[]"])
+def test_load_rejects_non_object_config(tmp_path, payload):
+    # A top-level scalar/list must not crash with TypeError or be misread as
+    # "declares no mode" — it is simply not a valid config object.
+    (tmp_path / conn.CONFIG_FILENAME).write_text(payload, encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        ProjectConfig.load(tmp_path)
+    assert "JSON object" in str(exc.value)
+
+
+def test_load_rejects_string_fields(tmp_path):
+    # A string `fields` would be shredded into single characters by tuple(),
+    # silently matching nothing and leaking raw connection strings. Reject it.
+    _write_config(tmp_path, mode="env", fields="workspaceConnectionString")
+    with pytest.raises(SystemExit) as exc:
+        ProjectConfig.load(tmp_path)
+    assert "fields" in str(exc.value)
+
+
 # --------------------------------------------------------------------------- #
 # Environment mode: connection-file discovery + map building
 # --------------------------------------------------------------------------- #
@@ -125,3 +153,19 @@ def test_env_reverse_map_value_collision_is_hard_error(tmp_path):
     cfg = ProjectConfig.load(tmp_path)
     with pytest.raises(SystemExit):
         cfg.reverse_map()
+
+
+# --------------------------------------------------------------------------- #
+# Mode is the master switch: env-only helpers reject a simple-mode project
+# --------------------------------------------------------------------------- #
+
+def test_simple_mode_rejects_substitution_helpers(tmp_path):
+    # Even with a stray local.json present, a simple-mode project must not
+    # expose connection maps — substitution is an environment-mode concept.
+    _write_config(tmp_path, mode="simple")
+    (tmp_path / conn.LOCAL_FILE).write_text(json.dumps({"main": "X"}))
+    cfg = ProjectConfig.load(tmp_path)
+    for call in (cfg.connection_files, cfg.reverse_map, cfg.forward_map):
+        with pytest.raises(SystemExit) as exc:
+            call()
+        assert "simple" in str(exc.value)
