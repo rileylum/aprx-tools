@@ -138,12 +138,13 @@ def connections_init(aprx_file: str) -> None:
 
 
 def connections_check() -> None:
-    # Route through ProjectConfig: ProjectConfig.load owns the strict "no aprx.json /
-    # no declared mode → run aprx install" error (ADR-0001), and
-    # committed_connection_files owns the env-only discovery, so check never
-    # re-derives the resolution ritual or silently runs against a simple-mode project.
-    project = conn.find_project_config(Path.cwd()) or Path.cwd()
-    cfg = ProjectConfig.load(project)
+    # Resolve the project at the current directory and route through ProjectConfig:
+    # ProjectConfig.load owns the strict "no aprx.json / no declared mode → run aprx
+    # install" error (ADR-0001), and committed_connection_files owns the env-only
+    # discovery, so check never re-derives the resolution ritual or silently runs
+    # against a simple-mode project. The project dir is cwd — the same declared-mode
+    # paradigm the rest of the CLI uses, not a presence-sniffing walk-up.
+    cfg = ProjectConfig.load(Path.cwd())
     files = cfg.committed_connection_files()
     if not files:
         sys.exit(f"aprx-tools: no connection files in {cfg.dir / conn.CONNECTIONS_DIR}")

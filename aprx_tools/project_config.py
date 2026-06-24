@@ -137,20 +137,6 @@ class ProjectConfig:
                 f"{what} is only available in environment mode"
             )
 
-    def connection_files(self) -> "list[Path]":
-        """Every connection file supplying real values: ``connections/*.json``
-        plus ``local.json`` if present."""
-        self._require_env("connection-file discovery")
-        return conn.connection_files(self.dir)
-
-    def reverse_map(self) -> "dict[str, str]":
-        """``{connection_string: key}`` unioned across **all** connection files,
-        ``local.json`` included. The full union — kept for any caller that genuinely
-        wants it; explode does **not** use this (see ``committed_reverse_map``). A
-        value mapped to two keys is a hard error."""
-        self._require_env("the connection reverse map")
-        return conn.build_reverse_map(self.connection_files())
-
     def committed_connection_files(self) -> "list[Path]":
         """Only ``connections/*.json`` — the **committed**, team-shared environments,
         excluding the gitignored, per-developer ``local.json``."""

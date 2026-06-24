@@ -124,20 +124,6 @@ def _env_project(tmp_path, dev=None, uat=None, local=None):
     return tmp_path
 
 
-def test_env_discovers_connection_files(tmp_path):
-    _env_project(tmp_path, dev={"main": "DEV"}, uat={"main": "UAT"}, local={"main": "DEV"})
-    cfg = ProjectConfig.load(tmp_path)
-    names = sorted(p.name for p in cfg.connection_files())
-    assert names == ["dev.json", "local.json", "uat.json"]
-
-
-def test_env_reverse_map_unions_environments(tmp_path):
-    _env_project(tmp_path, dev={"main": "DEV"}, uat={"main": "UAT"})
-    cfg = ProjectConfig.load(tmp_path)
-    # value -> token key, unioned across every environment file
-    assert cfg.reverse_map() == {"DEV": "main", "UAT": "main"}
-
-
 def test_env_forward_map_for_chosen_environment(tmp_path):
     _env_project(tmp_path, dev={"main": "DEV"}, uat={"main": "UAT"}, local={"main": "DEV"})
     cfg = ProjectConfig.load(tmp_path)
@@ -145,14 +131,6 @@ def test_env_forward_map_for_chosen_environment(tmp_path):
     assert cfg.forward_map(env="uat") == {"main": "UAT"}
     # default (no flag) falls back to local.json
     assert cfg.forward_map() == {"main": "DEV"}
-
-
-def test_env_reverse_map_value_collision_is_hard_error(tmp_path):
-    # one connection value mapped to two different keys is ambiguous
-    _env_project(tmp_path, dev={"main": "SAME"}, uat={"other": "SAME"})
-    cfg = ProjectConfig.load(tmp_path)
-    with pytest.raises(SystemExit):
-        cfg.reverse_map()
 
 
 # --------------------------------------------------------------------------- #
@@ -165,7 +143,7 @@ def test_simple_mode_rejects_substitution_helpers(tmp_path):
     _write_config(tmp_path, mode="simple")
     (tmp_path / conn.LOCAL_FILE).write_text(json.dumps({"main": "X"}))
     cfg = ProjectConfig.load(tmp_path)
-    for call in (cfg.connection_files, cfg.reverse_map, cfg.forward_map):
+    for call in (cfg.committed_reverse_map, cfg.forward_map):
         with pytest.raises(SystemExit) as exc:
             call()
         assert "simple" in str(exc.value)
