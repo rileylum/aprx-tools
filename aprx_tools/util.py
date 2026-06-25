@@ -35,10 +35,31 @@ def src_dir_for(aprx_path: Path) -> Path:
 
 
 def aprx_for_src_dir(src_dir: Path) -> Path:
-    """map.aprx.src → map.aprx  (Path.stem strips the last extension)."""
+    """map.aprx.src → map.aprx  (Path.stem strips the last extension).
+
+    Strict: the input *must* follow the convention. Use this where a violation is a
+    bug (hooks, verify). For best-effort naming of an arbitrary directory the user
+    points a command at, use ``aprx_output_for``."""
     if not src_dir.name.endswith(".aprx.src"):
         raise ValueError(f"{src_dir.name!r} does not follow the <name>.aprx.src convention")
     return src_dir.parent / src_dir.stem
+
+
+def aprx_output_for(src_dir: Path) -> Path:
+    """The .aprx to write when packing *src_dir* — the lenient sibling of
+    ``aprx_for_src_dir``. Commands the user can aim at any directory (``pack``,
+    ``build``) accept a folder that may not follow our convention, so this never
+    raises: strip a single trailing ``.src`` if present, then ensure an ``.aprx``
+    extension.
+
+        map.aprx.src → map.aprx    data.src → data.aprx    myfolder → myfolder.aprx
+    """
+    name = src_dir.name
+    if name.endswith(".src"):
+        name = name[: -len(".src")]
+    if not name.endswith(".aprx"):
+        name += ".aprx"
+    return src_dir.parent / name
 
 
 def is_aprx_src_dir(path: Path) -> bool:

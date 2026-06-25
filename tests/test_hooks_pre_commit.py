@@ -27,7 +27,7 @@ from types import SimpleNamespace
 import pytest
 
 from aprx_tools.explode import explode
-from aprx_tools.hooks import hook_pre_commit, hook_pre_push, _aprx_for
+from aprx_tools.hooks import hook_pre_commit, hook_pre_push
 from aprx_tools.transform import explode_transform
 
 FIXTURES = Path(__file__).parent / "fixtures"

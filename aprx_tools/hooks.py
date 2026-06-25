@@ -9,14 +9,15 @@ from .explode import explode
 from .pack import pack
 from .project_config import ProjectConfig
 from .transform import SubstitutionError, explode_transform, pack_transform
-from .util import is_aprx_src_dir, iter_src_dirs
+from .util import (
+    aprx_for_src_dir,
+    aprx_output_for,
+    git_root,
+    is_aprx_src_dir,
+    iter_src_dirs,
+    src_dir_for,
+)
 from . import connections as conn
-
-
-def _git_root() -> Path:
-    return Path(subprocess.check_output(
-        ["git", "rev-parse", "--show-toplevel"], text=True
-    ).strip())
 
 
 def _git(root: Path, *args) -> str:
@@ -49,11 +50,6 @@ def _unstage(root: Path, rel: str) -> None:
         _git_run(root, "reset", "HEAD", rel)
     else:
         _git_run(root, "rm", "--cached", "--quiet", rel)
-
-
-def _aprx_for(src_dir: Path) -> Path:
-    """map.aprx.src → map.aprx (Path.stem drops the trailing .src)."""
-    return src_dir.parent / src_dir.stem
 
 
 def _is_env_project(project_dir: Path) -> bool:
@@ -105,7 +101,7 @@ def _refresh_env_sources(root: Path) -> set:
         # Marked handled even if the refresh below fails, so the simple pass never
         # steps in and stages this env project's binary.
         handled.add(src_dir.resolve())
-        aprx = _aprx_for(src_dir)
+        aprx = aprx_for_src_dir(src_dir)
         if not aprx.exists():
             continue
         try:
@@ -128,7 +124,7 @@ def _refresh_env_sources(root: Path) -> set:
 
 
 def hook_pre_commit() -> None:
-    root = _git_root()
+    root = git_root()
 
     # Env-mode projects first (refresh tokenised src; never stage a binary).
     handled = _refresh_env_sources(root)
@@ -151,7 +147,7 @@ def hook_pre_commit() -> None:
         if ProjectConfig.load(aprx_abs.parent).is_env:
             _unstage(root, rel)
             continue
-        src_dir = aprx_abs.parent / (aprx_abs.name + ".src")
+        src_dir = src_dir_for(aprx_abs)
         explode(str(aprx_abs), str(src_dir))
         _git_run(root, "add", str(src_dir.relative_to(root)))
         _unstage(root, rel)
@@ -168,7 +164,7 @@ def hook_pre_commit() -> None:
         if (src_top is None or src_top in packed
                 or src_top.resolve() in handled):
             continue
-        aprx_path = _aprx_for(src_top)
+        aprx_path = aprx_for_src_dir(src_top)
         pack(str(src_top), str(aprx_path))
         _git_run(root, "add", str(aprx_path.relative_to(root)))
         packed.add(src_top)
@@ -187,7 +183,7 @@ def build_working_copies(root: Path = None, src_dir: str = None, env: str = None
         targets = [Path(src_dir)]
     else:
         if root is None:
-            root = _git_root()
+            root = git_root()
         targets = list(iter_src_dirs(root))
 
     for sd in targets:
@@ -217,7 +213,7 @@ def build_working_copies(root: Path = None, src_dir: str = None, env: str = None
         # otherwise won't resolve (sys.exit) downgrades to a skip, not a crashed hook.
         try:
             transform = pack_transform(project_dir, env=env)
-            pack(str(sd), str(_aprx_for(sd)), transform=transform)
+            pack(str(sd), str(aprx_output_for(sd)), transform=transform)
         except (SystemExit, SubstitutionError, json.JSONDecodeError) as e:
             # JSONDecodeError covers a hand-broken connections/local.json (load_connections
             # parses it raw): these post-* hooks are documented never to block, so a
@@ -226,17 +222,17 @@ def build_working_copies(root: Path = None, src_dir: str = None, env: str = None
 
 
 def hook_post_merge() -> None:
-    build_working_copies(_git_root())
+    build_working_copies(git_root())
 
 
 def hook_post_checkout() -> None:
-    build_working_copies(_git_root())
+    build_working_copies(git_root())
 
 
 def hook_post_stash() -> None:
     """Repack all .aprx.src directories after a stash pop so the local .aprx
     stays in sync with the checked-out src files."""
-    build_working_copies(_git_root())
+    build_working_copies(git_root())
 
 
 def hook_pre_push() -> int:

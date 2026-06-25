@@ -1,7 +1,12 @@
 import pytest
 from pathlib import Path
 
-from aprx_tools.util import src_dir_for, aprx_for_src_dir, is_aprx_src_dir
+from aprx_tools.util import (
+    src_dir_for,
+    aprx_for_src_dir,
+    aprx_output_for,
+    is_aprx_src_dir,
+)
 
 
 def test_src_dir_for_bare_name():
@@ -28,6 +33,28 @@ def test_aprx_for_src_dir_raises_on_non_conforming():
 def test_aprx_for_src_dir_raises_on_plain_aprx():
     with pytest.raises(ValueError):
         aprx_for_src_dir(Path("simple.aprx"))
+
+
+def test_aprx_output_for_conventional_matches_strict():
+    # On a conventional dir, the lenient sibling agrees with aprx_for_src_dir.
+    assert aprx_output_for(Path("map.aprx.src")) == Path("map.aprx")
+
+
+def test_aprx_output_for_strips_trailing_src():
+    assert aprx_output_for(Path("data.src")) == Path("data.aprx")
+
+
+def test_aprx_output_for_bare_dir_appends_aprx():
+    assert aprx_output_for(Path("myfolder")) == Path("myfolder.aprx")
+
+
+def test_aprx_output_for_preserves_parent():
+    assert aprx_output_for(Path("/some/path/myfolder")) == Path("/some/path/myfolder.aprx")
+
+
+def test_aprx_output_for_never_raises_on_non_conforming():
+    # Unlike aprx_for_src_dir, the lenient sibling produces a name instead of raising.
+    assert aprx_output_for(Path("simple")) == Path("simple.aprx")
 
 
 def test_is_aprx_src_dir_true(tmp_path):
