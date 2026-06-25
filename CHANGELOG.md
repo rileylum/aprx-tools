@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-06-25
+
+### Fixed
+
+- `aprx build <dir>` pointed at a directory **not** named `*.aprx.src` no longer
+  produces an output path that collides with the input directory (the old derivation
+  reduced `my-folder` to `my-folder`); it now writes `my-folder.aprx`.
+
+### Changed
+
+- `util` is now the single owner of the `.aprx` ↔ `.aprx.src` naming convention.
+  Duplicated derivations in `hooks` (`_aprx_for`, an inline `src_dir` build) and the
+  caught-`ValueError` fallback in `pack` are gone; every caller routes through
+  `util.aprx_for_src_dir` / `src_dir_for` / the new lenient `aprx_output_for`. Pure
+  internal refactor — no change to committed output.
+- The last open-coded git-root finder (`hooks._git_root`) now routes through
+  `util.git_root`, leaving one git-root implementation in the package.
+
+### Added
+
+- `util.aprx_output_for`: best-effort src-dir → `.aprx` naming for commands a user can
+  aim at any directory (`pack`, `build`) — strips a trailing `.src`, ensures `.aprx`,
+  and never raises (unlike the strict `aprx_for_src_dir`).
+
+## [0.2.0] - 2026-06-25
+
 ### Changed (breaking)
 
 - **A project's mode is now declared, not detected.** The mode (`simple` or `env`) is
