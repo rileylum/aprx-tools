@@ -19,11 +19,12 @@ Full per-project mode reading is issue 0009; this only locks down the cutover's 
 import json
 import zipfile
 
-from aprx_tools.hooks import build_working_copies, _aprx_for
+from aprx_tools.hooks import build_working_copies
+from aprx_tools.util import aprx_output_for
 
 
 def _working_blob(src_dir):
-    out = _aprx_for(src_dir)
+    out = aprx_output_for(src_dir)
     with zipfile.ZipFile(out) as zf:
         return "".join(zf.read(n).decode("utf-8") for n in zf.namelist()
                        if n.endswith(".json"))
@@ -46,9 +47,9 @@ def test_unmigrated_connection_project_is_skipped_not_leaked(env_project, explod
     # so the pre-existing working .aprx is left byte-for-byte untouched.
     src = explode_env(env_project.aprx)
     (env_project.dir / "aprx.json").unlink()
-    before = _aprx_for(src).read_bytes()
+    before = aprx_output_for(src).read_bytes()
     build_working_copies(src_dir=str(src))
-    assert _aprx_for(src).read_bytes() == before    # not rebuilt → nothing leaked
+    assert aprx_output_for(src).read_bytes() == before    # not rebuilt → nothing leaked
 
 
 def test_missing_key_does_not_crash_the_hook(env_project, explode_env, capsys):

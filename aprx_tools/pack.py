@@ -3,7 +3,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-from .util import aprx_for_src_dir
+from .util import aprx_output_for
 from .transform import IDENTITY
 
 _DOS_EPOCH = (1980, 1, 1, 0, 0, 0)
@@ -33,10 +33,7 @@ def pack(src_dir: str, output_path: str = None, transform=IDENTITY) -> Path:
     if output_path:
         out = Path(output_path)
     else:
-        try:
-            out = aprx_for_src_dir(src)
-        except ValueError:
-            out = src.parent / (src.name + ".aprx")
+        out = aprx_output_for(src)
 
     files = sorted(f for f in src.rglob("*") if f.is_file())
 
